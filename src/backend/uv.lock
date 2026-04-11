@@ -1,0 +1,29 @@
+version = 1
+revision = 3
+requires-python = ">=3.13"
+
+[[package]]
+name = "baml-py"
+version = "0.220.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d8/ba/7684ad7c0742439c872e55d4c44f1206bf232cb8b5603a66808dc6f33dca/baml_py-0.220.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:edf4112d1b1da5765ebfcadab7f9eee48ac337e5b06ff8286c970e27cd87e28e", size = 21731462, upload-time = "2026-03-11T05:11:30.61Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/a1/8a1aa018034b5a0c93aece104d369bcf17047c82bfb7b9b6ad2a4f458742/baml_py-0.220.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:5e72466c12d9b6597d3dbe16a364699307911483bffc07e0b66d701cdefecf6d", size = 20617760, upload-time = "2026-03-11T05:11:34.225Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/7a/079a2a62f5ad4d8ec0dc824621fb0bb11711297ede1039323777cfc3daac/baml_py-0.220.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1da0548281e0d21d56886a46aaeef0680e660fc1b36a9bdbc11d04efad96cfcc", size = 24374095, upload-time = "2026-03-11T05:11:37.637Z" },
+    { url = "https://files.pythonhosted.org/packages/b5/ab/3c84bac43ec1b504d44763c9d2c655dbe35c75e65c21a98ffa834df509a5/baml_py-0.220.0-cp38-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:0895a3633b061505a3d48d259ca6a480dd37f2a9dade6ea3bf5b8fb1f7632d11", size = 23730399, upload-time = "2026-03-11T05:11:41.287Z" },
+    { url = "https://files.pythonhosted.org/packages/80/b3/8a8642f354f8e5d3cd35a7663dc854b13fafa135465b127009cbb75c16f2/baml_py-0.220.0-cp38-abi3-musllinux_1_1_aarch64.whl", hash = "sha256:52ba7755026322fd73dd70087c09745aae86df47306b1dde06cf731266b55c34", size = 24102622, upload-time = "2026-03-11T05:11:45.152Z" },
+    { url = "https://files.pythonhosted.org/packages/88/ca/376e18d65d68c6159498db725bf57998026552cd026da8e94f24e82d3f8f/baml_py-0.220.0-cp38-abi3-musllinux_1_1_x86_64.whl", hash = "sha256:a240cdc76455f8bd8aa5a5b3ad805369edb27320111bb915df543c55a846b916", size = 24629359, upload-time = "2026-03-11T05:11:49.122Z" },
+    { url = "https://files.pythonhosted.org/packages/29/f6/8290b6bf74bb9e6e3ca35cca15015010b905d90d7ea84e6c6c41aa28e434/baml_py-0.220.0-cp38-abi3-win_amd64.whl", hash = "sha256:a5b6d1374eec1225bc76444fc2e5dbb0b7f14ed5a1a043e20beef778475ff8d4", size = 21982867, upload-time = "2026-03-11T05:11:52.714Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/ab/5fa351b54b124c7131aae231d8945b00c9878f9599f6c952160f808876cb/baml_py-0.220.0-cp38-abi3-win_arm64.whl", hash = "sha256:76fe51528ac5cd07ea2bd8ab2ccd0fd302cd9fc1f5c5c3236c35edfede2d8b48", size = 20401712, upload-time = "2026-03-11T05:11:56.683Z" },
+]
+
+[[package]]
+name = "handwriting-to-obsidian"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "baml-py" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "baml-py", specifier = ">=0.220.0" }]
