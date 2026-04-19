@@ -2,8 +2,10 @@
   "name": "handwriting-to-obsidian",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "main.js",
   "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -12,5 +14,13 @@
   "packageManager": "pnpm@10.30.3",
   "dependencies": {
     "@boundaryml/baml": "0.220.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "builtin-modules": "^5.1.0",
+    "esbuild": "^0.28.0",
+    "obsidian": "^1.12.3",
+    "tslib": "^2.8.1",
+    "typescript": "^6.0.3"
   }
 }
