@@ -4,9 +4,9 @@
   "description": "",
   "main": "main.js",
   "scripts": {
-    "dev": "node esbuild.config.mjs",
-    "build": "node esbuild.config.mjs production",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "check": "tsc --noEmit",
+    "watch": "esbuild --format=cjs src/main.ts --watch --bundle --outdir=. --external:obsidian",
+    "build": "esbuild --format=cjs src/main.ts --bundle --outdir=. --external:obsidian"
   },
   "keywords": [],
   "author": "",
