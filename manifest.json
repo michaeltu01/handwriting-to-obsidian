@@ -2,10 +2,8 @@
 	"id": "handwriting-to-obsidian",
 	"name": "Handwriting to Obsidian",
 	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
+	"minAppVersion": "1.11.4",
 	"description": "Converting handwriting notes to Obsidian files for hyperlinking.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"author": "Ian Zelbo, Wesley Su, Alex Mazansky, Michael Tu",
 	"isDesktopOnly": false
 }

@@ -5,8 +5,8 @@
   "main": "main.js",
   "scripts": {
     "check": "tsc --noEmit",
-    "watch": "esbuild --format=cjs src/main.ts --watch --bundle --outdir=. --external:obsidian",
-    "build": "esbuild --format=cjs src/main.ts --bundle --outdir=. --external:obsidian"
+    "watch": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production"
   },
   "keywords": [],
   "author": "",

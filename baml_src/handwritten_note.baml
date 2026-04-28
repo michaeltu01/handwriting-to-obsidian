@@ -1,5 +1,3 @@
-// NOTE: UNTESTED CURRENTLY; I didn't load any credits into my Claude account yet LOL.
-
 // Defining a data model.
 class HandwrittenNote {
   title string
@@ -11,24 +9,53 @@ class HandwrittenNote {
 
 // "image" is a reserved keyword so we name the arg "img"
 function ExtractNoteContent(img: image) -> string {
-  client "CustomSonnet4"
-  // Most LLM providers require images or audio to be sent as "user" messages.
+  client "OpenaiFallback"
   prompt #"
     {{_.role("user")}}
-    This is a collection of images of a handwritten note. Extract the content of the image and convert it into text in standard Markdown format. If you encounter any freeform diagrams, instead of converting the diagram or any text in it, leave a placeholder with a description of the diagram (`diagram_description`) in the following format: [`diagram_description`].
+    Convert this handwritten note image into clean Markdown.
 
-    Return the original image(s).
-    
+    Requirements:
+    - Preserve headings, bullets, numbered lists, indentation, separators, and emphasis when they are visually clear.
+    - Prefer structured Markdown over plain paragraphs.
+    - If text is unclear, mark it as [illegible].
+    - If there is a diagram or non-text sketch, insert a short placeholder like [diagram: triangle with arrows and labels].
+    - Return only the Markdown transcription with no extra commentary.
+
     {{ img }}
   "#
 }
 
-// See the "testing functions" Guide for more on testing Multimodal functions
-test Test {
+function ExtractNoteContentFromPdf(doc: pdf) -> string {
+  client "OpenaiFallback"
+  prompt #"
+    {{_.role("user")}}
+    Convert this handwritten note PDF into clean Markdown.
+
+    Requirements:
+    - Preserve headings, bullets, numbered lists, indentation, separators, and emphasis when they are visually clear.
+    - Prefer structured Markdown over plain paragraphs.
+    - If text is unclear, mark it as [illegible].
+    - If there is a diagram or non-text sketch, insert a short placeholder like [diagram: triangle with arrows and labels].
+    - Return only the Markdown transcription with no extra commentary.
+
+    {{ doc }}
+  "#
+}
+
+test ImageTest {
   functions [ExtractNoteContent]
   args {
     img {
       file "../test_note.jpeg"
+    }
+  }
+}
+
+test PdfTest {
+  functions [ExtractNoteContentFromPdf]
+  args {
+    doc {
+      file "../test_note.pdf"
     }
   }
 }
