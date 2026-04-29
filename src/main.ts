@@ -30,10 +30,12 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		await this.loadSettings();
 		this.refreshApiKeyFromSettings();
 
+		// Ribbon icon
 		this.addRibbonIcon("pen-tool", "Import handwritten note", () => {
 			new HandwrittenImportModal(this.app, this).open();
 		});
 
+		// Commands
 		this.addCommand({
 			id: "import-handwritten-note",
 			name: "Import handwritten note",
@@ -50,6 +52,7 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			},
 		});
 
+		// Settings tab
 		this.addSettingTab(new HandwritingSettingTab(this.app, this));
 	}
 
@@ -57,6 +60,9 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		return this.settings.apiKeySecretId;
 	}
 
+	/**
+	 * Sets the API secret ID, saves the settings, and refreshs the API key.
+	 */
 	async setApiKeySecretId(secretId: string): Promise<void> {
 		this.settings.apiKeySecretId = secretId.trim();
 		await this.saveSettings();
@@ -72,10 +78,17 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		return normalizePath(this.settings.outputFolder.trim() || DEFAULT_SETTINGS.outputFolder);
 	}
 
+	/**
+	 * Imports a single handwritten file as an Obsidian Markdown file.
+	 */
 	async importHandwrittenFile(file: File): Promise<TFile> {
 		return await this.importHandwrittenFiles([file]);
 	}
 
+	/**
+	 * Import handwritten files as Obsidian Markdown files.
+	 * @returns a Promise containing a TFile
+	 */
 	async importHandwrittenFiles(files: File[]): Promise<TFile> {
 		this.refreshApiKeyFromSettings();
 		if (!this.apiKey) {
@@ -85,12 +98,13 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			throw new Error("Choose one PDF or at least one image before importing notes.");
 		}
 
-		const provider = this.getConfiguredProviderOrThrow();
+		const provider = this.getConfiguredProvider();
 		const selectionError = getUploadSelectionError(files);
 		if (selectionError) {
 			throw new Error(selectionError);
 		}
 
+		// Extract Markdown from files
 		const { kind, markdown } = files.length === 1 && isPdfUpload(files[0])
 			? await extractMarkdownFromFile(files[0], {
 				apiKey: this.apiKey,
@@ -128,6 +142,9 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		return await this.importVaultFiles([file]);
 	}
 
+	/**
+	 * Imports PDFs and images that already exist in the Obsidian vault.
+	 */
 	async importVaultFiles(files: TFile[]): Promise<TFile> {
 		const browserFiles = await Promise.all(files.map(async (vaultFile) => {
 			const fileBinary = await this.app.vault.readBinary(vaultFile);
@@ -140,7 +157,12 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		return await this.importHandwrittenFiles(browserFiles);
 	}
 
+	/** CAMERA PLUGIN FUNCTIONS */
+
 	hasCameraPluginInstalled(): boolean {
+		/**
+		 * Checks if the obsidian-camera plugin is installed. Plugin name is set in CAMERA_PLUGIN_ID.
+		 */
 		const plugins = (this.app as any).plugins?.plugins as Record<string, unknown> | undefined;
 		return Boolean(plugins?.[CAMERA_PLUGIN_ID]);
 	}
@@ -177,7 +199,7 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		if (!this.apiKey) {
 			throw new Error("Set an API key in the plugin settings before importing notes.");
 		}
-		this.getConfiguredProviderOrThrow();
+		this.getConfiguredProvider();
 
 		const commandId = this.getCameraPluginCommandId();
 		if (!commandId) {
@@ -245,7 +267,11 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		new Notice("Open Handwriting to Obsidian settings to update your API key.");
 	}
 
-	private getConfiguredProviderOrThrow() {
+	/**
+	 * Get the provider (e.g. "openai", "claude")
+	 * @throws error, if the provider doesn't exist
+	 */
+	private getConfiguredProvider() {
 		const validationError = getApiKeyValidationError(this.apiKey);
 		if (validationError) {
 			throw new Error(validationError);
@@ -259,6 +285,9 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		return provider;
 	}
 
+	/**
+	 * Load the API key from settings into the plugin.
+	 */
 	private refreshApiKeyFromSettings(): void {
 		const secretId = this.settings.apiKeySecretId.trim();
 		this.apiKey = normalizeApiKeyInput(
@@ -426,6 +455,9 @@ class HandwrittenImportModal extends Modal {
 		this.plugin = plugin;
 	}
 
+	/**
+	 * Constructs the HTML of the modal.
+	 */
 	onOpen() {
 		const { contentEl } = this;
 		contentEl.empty();
@@ -446,6 +478,7 @@ class HandwrittenImportModal extends Modal {
 		const sourceSectionEl = shell.createDiv({ cls: "hto-section" });
 		const sourceGridEl = sourceSectionEl.createDiv({ cls: "hto-source-grid" });
 
+		// On mobile, add a button to use the obsidian-camera plugin
 		if (Platform.isMobileApp && this.plugin.hasCameraPluginInstalled()) {
 			this.cameraButtonEl = createSourceCard(sourceGridEl, {
 				description: "Take one or more photos. Import starts after the last saved image.",
@@ -624,6 +657,7 @@ class HandwrittenImportModal extends Modal {
 		this.imageButtonEl.disabled = disabled;
 		this.imageInputEl.disabled = disabled;
 		this.convertButtonEl.disabled = disabled || this.selectedFiles.length === 0 || selectionError !== null;
+		this.convertButtonEl.classList.toggle("is-processing", disabled);
 		this.convertButtonLabelEl.textContent = disabled ? "Transcribing…" : "Convert to Markdown";
 		setIcon(this.convertButtonIconEl, disabled ? "loader-2" : "wand");
 	}
@@ -765,11 +799,11 @@ function isPdfUpload(file: File): boolean {
 }
 
 function isImageUpload(file: File): boolean {
+	const IMAGE_FILE_EXTENSIONS = [".bmp", ".gif", ".heic", ".heif", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"];
 	const lowerName = file.name.toLowerCase();
 	const lowerType = file.type.toLowerCase();
 	return lowerType.startsWith("image/")
-		|| [".bmp", ".gif", ".heic", ".heif", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"]
-			.some((extension) => lowerName.endsWith(extension));
+		|| IMAGE_FILE_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
 }
 
 function isCameraPluginCommand(command: { id: string; name?: string }): boolean {

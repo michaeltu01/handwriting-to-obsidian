@@ -417,7 +417,7 @@
 	place-items: center;
 }
 
-.hto-primary-button:disabled .hto-button-icon svg {
+.hto-primary-button:disabled .hto-button-icon svg.lucide-loader-2 {
 	animation: hto-spin 1s linear infinite;
 }
 

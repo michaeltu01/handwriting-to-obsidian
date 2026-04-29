@@ -1,3 +1,10 @@
+/**
+ * transcription.ts
+ * 
+ * This file exports helper functions related to transcribing content from imported files.
+ * It builds the content of the resulting Markdown files.
+ */
+
 import { arrayBufferToBase64, requestUrl } from "obsidian";
 import type { HandwritingProvider } from "./settings";
 
