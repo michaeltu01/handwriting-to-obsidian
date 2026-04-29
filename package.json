@@ -5,16 +5,13 @@
   "main": "main.js",
   "scripts": {
     "check": "tsc --noEmit",
-    "watch": "esbuild --format=cjs src/main.ts --watch --bundle --outdir=. --external:obsidian",
-    "build": "esbuild --format=cjs src/main.ts --bundle --outdir=. --external:obsidian"
+    "watch": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.30.3",
-  "dependencies": {
-    "@boundaryml/baml": "0.220.0"
-  },
   "devDependencies": {
     "@types/node": "^25.6.0",
     "builtin-modules": "^5.1.0",

@@ -17,7 +17,6 @@
     ]
   },
   "include": [
-    "src",
-    "baml_client"
+    "src"
   ]
 }
