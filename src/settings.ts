@@ -1,3 +1,9 @@
+/**
+ * settings.ts
+ * 
+ * This file constructs the settings tab for the Handwriting-to-Obsidian plugin and exports helper functions.
+ */
+
 import { App, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type HandwritingToObsidianPlugin from "./main";
 
@@ -17,6 +23,9 @@ export const DEFAULT_SETTINGS: HandwritingPluginSettings = {
 	outputFolder: "Handwritten Notes",
 };
 
+/**
+ * Normalizes the API key input from the user (e.g. removes whitespace, etc.)
+ */
 export function normalizeApiKeyInput(apiKey: string): string {
 	return apiKey
 		.trim()
@@ -26,6 +35,12 @@ export function normalizeApiKeyInput(apiKey: string): string {
 		.trim();
 }
 
+/**
+ * Determines the provider from the API key.
+ * 
+ * @param apiKey – API key
+ * @returns provider value as string or null
+ */
 export function detectProviderFromApiKey(apiKey: string): HandwritingProvider | null {
 	const normalizedKey = normalizeApiKeyInput(apiKey).toLowerCase();
 	if (!normalizedKey) {
@@ -43,6 +58,10 @@ export function detectProviderFromApiKey(apiKey: string): HandwritingProvider | 
 	return null;
 }
 
+/**
+ * Handles an API key validation error
+ * @returns null, if there is no error; otherwise, a string describing the error
+ */
 export function getApiKeyValidationError(apiKey: string): string | null {
 	const normalizedKey = normalizeApiKeyInput(apiKey);
 	if (!normalizedKey) {
@@ -80,7 +99,7 @@ export class HandwritingSettingTab extends PluginSettingTab {
 			.addComponent((el) => new SecretComponent(this.app, el)
 				.setValue(this.plugin.getApiKeySecretId())
 				.onChange((value) => {
-					void this.plugin.setApiKeySecretId(value);
+					void this.plugin.setApiKeySecretId(value); // NOTE: this function calls saveSettings()
 				}));
 
 		new Setting(containerEl)

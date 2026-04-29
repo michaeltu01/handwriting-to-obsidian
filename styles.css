@@ -129,8 +129,8 @@
 	justify-items: start;
 	width: 100%;
 	height: auto !important;
-	min-height: 78px !important;
-	padding: 12px !important;
+	min-height: 68px !important;
+	padding: 10px 12px 8px !important;
 	border: 1px solid rgba(255, 255, 255, 0.05);
 	border-radius: 20px;
 	background:
@@ -195,7 +195,7 @@
 
 .hto-source-card-body {
 	display: grid;
-	gap: 4px;
+	gap: 2px;
 	min-width: 0;
 }
 
@@ -216,7 +216,7 @@
 .hto-source-card-description {
 	color: var(--text-muted);
 	font-size: 0.88rem;
-	line-height: 1.4;
+	line-height: 1.28;
 }
 
 .hto-selected-section.is-hidden {
@@ -320,22 +320,23 @@
 .hto-footer {
 	display: flex;
 	gap: 12px;
-	align-items: flex-end;
+	align-items: stretch;
 	justify-content: space-between;
-	padding-top: 2px;
+	padding-top: 14px;
 	border-top: 0;
 }
 
 .hto-footer-meta {
 	display: flex;
-	align-items: center;
+	align-items: flex-end;
+	align-self: stretch;
 	flex: 0 0 auto;
 }
 
 .hto-footer-actions {
 	display: flex;
 	gap: 0;
-	align-items: center;
+	align-items: flex-end;
 	justify-content: flex-end;
 	flex: 1 1 auto;
 }
@@ -417,7 +418,7 @@
 	place-items: center;
 }
 
-.hto-primary-button:disabled .hto-button-icon svg {
+.hto-primary-button:disabled .hto-button-icon svg.lucide-loader-2 {
 	animation: hto-spin 1s linear infinite;
 }
 
