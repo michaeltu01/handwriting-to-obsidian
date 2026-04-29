@@ -11,11 +11,9 @@ Week 1 vertical slice for the CS 1377 final project: upload a handwritten image/
 - Run on both desktop and mobile Obsidian.
 - On mobile, optionally open `obsidian-camera` directly and import the next captured image automatically.
 
-## Mobile support
+## Architecture
 
-The plugin originally used `@boundaryml/baml` directly at runtime, but that package loads native `.node` binaries and Node-only modules such as `node:fs` and `node:module`. That works on desktop Node environments and breaks on Obsidian mobile.
-
-The live transcription path now avoids that runtime dependency. Instead, the plugin uses Obsidian's `requestUrl` API to send image and PDF inputs directly to the selected provider (`OpenAI` or `Anthropic`), which keeps the same import flow working across desktop and mobile.
+The plugin uses Obsidian's `requestUrl` API to send image and PDF inputs directly to `OpenAI` or `Anthropic`. That keeps the import flow working across both desktop and mobile Obsidian without any native runtime dependency.
 
 ## Setup
 
@@ -26,8 +24,7 @@ The live transcription path now avoids that runtime dependency. Instead, the plu
 5. Use Obsidian `1.11.4` or newer.
 6. In Obsidian, enable the plugin in Community Plugins.
 7. Open the plugin settings and configure:
-   - Provider: `OpenAI` or `Anthropic`
-   - API key: stored in Secret Storage
+   - API key secret: select an Obsidian Secret Storage entry whose value is your raw `OpenAI` or `Anthropic` API key
    - Output folder for generated Markdown notes
 
 ## Usage
