@@ -14,6 +14,7 @@ import {
 	inferNoteTitle,
 	sanitizeFileNameSegment,
 } from "./transcription";
+import { captureNativeCameraImages, saveImagesToAttachments } from "./native-camera";
 import {
 	API_KEY_SECRET_ID,
 	detectProviderFromApiKey,
@@ -50,6 +51,22 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			mobileOnly: true,
 			callback: () => {
 				void this.captureWithCameraPluginAndImport();
+			},
+		});
+
+		this.addCommand({
+			id: "take-photo-natively",
+			name: "Take photo natively",
+			mobileOnly: true,
+			callback: async () => {
+				const files = await captureNativeCameraImages(this.app);
+				if (files.length > 0) {
+					new Notice(`Transcribing ${files.length} native image(s)...`);
+					// Save them as TFiles first in the attachment folder
+					await saveImagesToAttachments(this.app, files);
+					// Import them directly
+					await this.importHandwrittenFiles(files);
+				}
 			},
 		});
 
