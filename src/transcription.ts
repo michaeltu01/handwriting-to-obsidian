@@ -17,6 +17,7 @@ interface ExtractionConfig {
 
 interface ImportedNoteContentOptions {
 	importedAt: Date;
+	includeOriginalDocument: boolean;
 	markdown: string;
 	provider: HandwritingProvider;
 	sourceNames: string[];
@@ -119,6 +120,10 @@ export function buildImportedNoteContent(options: ImportedNoteContentOptions): s
 			...options.sourceNames.map((sourceName) => `  - '${escapeYamlString(sourceName)}'`),
 		];
 
+	const embeds = options.includeOriginalDocument && options.sourceNames.length > 0
+		? ["", "---", "", "## Original Document", "", ...options.sourceNames.map((sourceName) => `![[${sourceName}]]`)]
+		: [];
+
 	return [
 		"---",
 		`title: '${escapeYamlString(title)}'`,
@@ -129,6 +134,7 @@ export function buildImportedNoteContent(options: ImportedNoteContentOptions): s
 		"---",
 		"",
 		`${titleHeading}${markdown}`.trim(),
+		...embeds,
 		"",
 	].join("\n");
 }
