@@ -9,3 +9,9 @@ Created logic to trigger the mobile OS's native camera or gallery by utilizing a
 
 **2. `src/plugin.ts` Modifications**
 Registered the `take-photo-natively` command. Set `mobileOnly: true` as requested. The command callback awaits the captured browser `File` objects from `captureNativeCameraImages`, saves them globally, and then routes them directly into the underlying `#sym:importHandwrittenFiles` transcription logic.
+
+**3. Added NativeCameraModal to `src/native-camera.ts`**
+Created an interactive UI modal `NativeCameraModal` that tracks in-memory captured files. It allows the user to repeatedly invoke the native camera ('Take photo'), accumulating the photos. 'Cancel' clears memory and closes the modal, while 'Upload' passes the array of images natively to the vault and to `importHandwrittenFiles()`.
+
+**4. Updated `src/plugin.ts` callback**
+Changed the `take-photo-natively` command to simply trigger `new NativeCameraModal(this.app, this).open();`.
