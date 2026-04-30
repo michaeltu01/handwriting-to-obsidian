@@ -28,28 +28,24 @@ export class HandwrittenImportModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.addClass("hto-modal-content");
-		this.modalEl.addClass("hto-modal-shell");
+		contentEl.addClass("hto-import-modal");
 
-		const shell = contentEl.createDiv({ cls: "hto-import-modal" });
-		const heroEl = shell.createDiv({ cls: "hto-hero" });
-		heroEl.createEl("h2", {
+		contentEl.createEl("h2", {
 			cls: "hto-title",
 			text: "Import handwritten note",
 		});
-		heroEl.createEl("p", {
+		contentEl.createEl("p", {
 			cls: "hto-description",
 			text: "Choose a PDF or note images to convert into Markdown",
 		});
 
-		const sourceSectionEl = shell.createDiv({ cls: "hto-section" });
-		const sourceGridEl = sourceSectionEl.createDiv({ cls: "hto-source-grid" });
+		const sourceSectionEl = contentEl.createDiv({ cls: "hto-section" });
 
 		if (Platform.isMobileApp && this.plugin.hasCameraPluginInstalled()) {
-			this.cameraButtonEl = createSourceCard(sourceGridEl, {
+			this.cameraButtonEl = createActionRow(sourceSectionEl, {
+				buttonText: "Open",
 				description: "Take one or more photos. Import starts after the last saved image.",
 				icon: "camera",
-				modifierClass: "is-camera",
 				title: "Take photo",
 			});
 			this.cameraButtonEl.addEventListener("click", () => void this.handleCameraCapture());
@@ -60,16 +56,14 @@ export class HandwrittenImportModal extends Modal {
 		this.imageInputEl.multiple = true;
 		this.imageInputEl.style.display = "none";
 
-		this.imageButtonEl = createSourceCard(sourceGridEl, {
+		this.imageButtonEl = createActionRow(sourceSectionEl, {
+			buttonText: "Choose",
 			description: "Photo, scan, screenshot, gallery images, or a PDF.",
 			icon: "files",
 			title: "Choose files",
 		});
-		if (sourceGridEl.childElementCount === 1 || this.cameraButtonEl) {
-			sourceGridEl.addClass("is-single-column");
-		}
 
-		this.selectedSectionEl = shell.createDiv({ cls: "hto-section hto-selected-section is-hidden" });
+		this.selectedSectionEl = contentEl.createDiv({ cls: "hto-section hto-selected-section is-hidden" });
 		this.selectedFileCardEl = this.selectedSectionEl.createDiv({
 			cls: "hto-selected-file-card",
 		});
@@ -89,11 +83,11 @@ export class HandwrittenImportModal extends Modal {
 			text: "",
 		});
 
-		this.statusEl = shell.createDiv({
+		this.statusEl = contentEl.createDiv({
 			cls: "hto-status is-hidden",
 		});
 
-		const footerEl = shell.createDiv({ cls: "hto-footer" });
+		const footerEl = contentEl.createDiv({ cls: "hto-footer" });
 		const footerMetaEl = footerEl.createDiv({ cls: "hto-footer-meta" });
 		this.updateApiKeyButtonEl = footerMetaEl.createEl("button", {
 			attr: { type: "button" },
@@ -126,8 +120,7 @@ export class HandwrittenImportModal extends Modal {
 	}
 
 	onClose() {
-		this.contentEl.removeClass("hto-modal-content");
-		this.modalEl.removeClass("hto-modal-shell");
+		this.contentEl.removeClass("hto-import-modal");
 		this.contentEl.empty();
 	}
 
@@ -285,25 +278,27 @@ export class HandwrittenImportModal extends Modal {
 	}
 }
 
-function createSourceCard(
+function createActionRow(
 	containerEl: HTMLElement,
 	options: {
+		buttonText: string;
 		description: string;
 		icon: string;
-		modifierClass?: string;
 		title: string;
 	},
 ): HTMLButtonElement {
-	const cardEl = containerEl.createEl("button", {
-		attr: { type: "button" },
-		cls: `hto-source-card${options.modifierClass ? ` ${options.modifierClass}` : ""}`,
-	});
-	const iconEl = cardEl.createDiv({ cls: "hto-source-card-icon" });
+	const rowEl = containerEl.createDiv({ cls: "setting-item hto-action-row" });
+	const infoEl = rowEl.createDiv({ cls: "setting-item-info" });
+	const nameEl = infoEl.createDiv({ cls: "setting-item-name hto-action-name" });
+	const iconEl = nameEl.createSpan({ cls: "hto-action-icon" });
 	setIcon(iconEl, options.icon);
-	const bodyEl = cardEl.createDiv({ cls: "hto-source-card-body" });
-	bodyEl.createDiv({ cls: "hto-source-card-title", text: options.title });
-	bodyEl.createDiv({ cls: "hto-source-card-description", text: options.description });
-	return cardEl;
+	nameEl.createSpan({ text: options.title });
+	infoEl.createDiv({ cls: "setting-item-description", text: options.description });
+	const controlEl = rowEl.createDiv({ cls: "setting-item-control" });
+	return controlEl.createEl("button", {
+		attr: { type: "button" },
+		text: options.buttonText,
+	});
 }
 
 function formatFileSize(bytes: number): string {
