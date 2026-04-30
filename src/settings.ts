@@ -119,7 +119,7 @@ export class HandwritingSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Include original document")
-			.setDesc("Include an embed of the original PDF or image(s) at the bottom of the transcribed Markdown note.")
+			.setDesc(`Include an embed of the original PDF or image(s) at the bottom of the transcribed Markdown note. The original file will be uploaded to the folder the user configures for attachments in the "Files and links" tab`)
 			.addToggle((toggle) => {
 				toggle
 					.setValue(this.plugin.settings.includeOriginalDocument)

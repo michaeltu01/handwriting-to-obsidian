@@ -1,7 +1,5 @@
 # handwriting-to-obsidian
 
-Week 1 vertical slice for the CS 1377 final project: upload a handwritten image/photo or PDF, send it to an LLM, and create a Markdown note inside Obsidian.
-
 ## Current scope
 
 - Import a handwritten `image/*` file or `PDF` from inside Obsidian.
