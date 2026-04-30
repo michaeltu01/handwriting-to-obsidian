@@ -15,3 +15,6 @@ Created an interactive UI modal `NativeCameraModal` that tracks in-memory captur
 
 **4. Updated `src/plugin.ts` callback**
 Changed the `take-photo-natively` command to simply trigger `new NativeCameraModal(this.app, this).open();`.
+
+**5. Removed deprecated Camera plugin integration**
+Deleted `src/camera.ts` and removed unused `captureWithCameraPluginAndImport` and `hasCameraPluginInstalled` methods from `src/plugin.ts`. Updated `src/import-modal.ts` to open the new `NativeCameraModal` directly, replacing the old external plugin dependency entirely. Renamed command to `capture-by-camera`.

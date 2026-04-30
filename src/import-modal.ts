@@ -1,6 +1,7 @@
 import { App, Modal, Notice, Platform, setIcon } from "obsidian";
 import type HandwritingToObsidianPlugin from "./plugin";
 import { getUploadSelectionError, isPdfUpload } from "./upload";
+import { NativeCameraModal } from "./native-camera";
 
 export class HandwrittenImportModal extends Modal {
 	private selectedFiles: File[] = [];
@@ -45,7 +46,7 @@ export class HandwrittenImportModal extends Modal {
 		const sourceSectionEl = shell.createDiv({ cls: "hto-section" });
 		const sourceGridEl = sourceSectionEl.createDiv({ cls: "hto-source-grid" });
 
-		if (Platform.isMobileApp && this.plugin.hasCameraPluginInstalled()) {
+		if (Platform.isMobileApp) {
 			this.cameraButtonEl = createSourceCard(sourceGridEl, {
 				description: "Take one or more photos. Import starts after the last saved image.",
 				icon: "camera",
@@ -188,27 +189,9 @@ export class HandwrittenImportModal extends Modal {
 		if (this.isProcessing) {
 			return;
 		}
-
-		const apiKeyValidationError = this.plugin.getApiKeyValidationError();
-		if (apiKeyValidationError) {
-			this.setStatus(apiKeyValidationError, "error");
-			new Notice(apiKeyValidationError);
-			return;
-		}
-
-		this.isProcessing = true;
-		this.setStatus("", "loading");
-		this.updateActions();
+		
 		this.close();
-
-		try {
-			const createdFile = await this.plugin.captureWithCameraPluginAndImport();
-			new Notice(`Created ${createdFile.path}`);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "Failed to capture note with the Camera plugin.";
-			console.error("Handwriting to Obsidian camera capture failed", error);
-			new Notice(message);
-		}
+		new NativeCameraModal(this.app, this.plugin).open();
 	}
 
 	private updateActions(): void {
