@@ -51,10 +51,10 @@ export async function captureImagesWithCameraPlugin(
 	captureFolder: string,
 ): Promise<TFile[]> {
 	const commandManager = (app as App & { commands?: CommandManager }).commands;
-	const executeCommandById = commandManager?.executeCommandById;
-	if (!executeCommandById) {
+	if (!commandManager?.executeCommandById) {
 		throw new Error("Obsidian command execution is unavailable.");
 	}
+	const executeCommandById = commandManager.executeCommandById.bind(commandManager);
 
 	const startedAt = Date.now();
 	let timeoutId = 0;

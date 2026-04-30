@@ -5,8 +5,8 @@
 	--hto-accent-soft: rgba(92, 149, 255, 0.16);
 	--hto-border-strong: rgba(92, 149, 255, 0.34);
 	--hto-surface-raised: rgba(255, 255, 255, 0.05);
-	--hto-shadow: 0 22px 60px rgba(0, 0, 0, 0.22);
-	--hto-glass-border: rgba(255, 255, 255, 0.08);
+	--hto-shadow: none;
+	--hto-glass-border: rgba(255, 255, 255, 0.12);
 	--hto-glass-surface: rgba(22, 23, 26, 0.72);
 	--hto-glass-surface-strong: rgba(28, 30, 34, 0.82);
 }
@@ -18,8 +18,8 @@
 	--hto-accent-soft: rgba(37, 105, 212, 0.12);
 	--hto-border-strong: rgba(37, 105, 212, 0.22);
 	--hto-surface-raised: rgba(255, 255, 255, 0.52);
-	--hto-shadow: 0 18px 44px rgba(70, 45, 16, 0.12);
-	--hto-glass-border: rgba(255, 255, 255, 0.44);
+	--hto-shadow: none;
+	--hto-glass-border: rgba(255, 255, 255, 0.24);
 	--hto-glass-surface: rgba(250, 247, 242, 0.7);
 	--hto-glass-surface-strong: rgba(255, 253, 249, 0.82);
 }
@@ -28,9 +28,10 @@
 	width: min(500px, calc(100vw - 28px));
 	max-width: 500px;
 	padding: 0;
-	border: 0;
+	border: 0 !important;
+	outline: none !important;
 	background: transparent;
-	box-shadow: none;
+	box-shadow: none !important;
 }
 
 .hto-modal-shell .modal-close-button {
@@ -56,13 +57,15 @@
 	padding: 0;
 	background: transparent;
 	overflow: visible;
+	box-shadow: none !important;
 }
 
 .hto-import-modal {
 	position: relative;
 	overflow: clip;
 	padding: 20px;
-	border: 1px solid var(--hto-glass-border);
+	border: 0 !important;
+	outline: none !important;
 	border-radius: 22px;
 	background:
 		radial-gradient(circle at top left, rgba(var(--hto-accent-rgb), 0.14), transparent 30%),
@@ -70,18 +73,19 @@
 		var(--hto-glass-surface);
 	backdrop-filter: blur(28px) saturate(165%);
 	-webkit-backdrop-filter: blur(28px) saturate(165%);
-	box-shadow: var(--hto-shadow);
+	box-shadow: none !important;
 }
 
 .hto-import-modal::before {
+	display: none;
+}
+
+.hto-import-modal::after {
 	content: "";
 	position: absolute;
-	top: 0;
-	left: 32px;
-	right: 32px;
-	height: 1px;
-	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
-	opacity: 0.7;
+	inset: 0;
+	border: 1px solid var(--hto-glass-border);
+	border-radius: inherit;
 	pointer-events: none;
 }
 
