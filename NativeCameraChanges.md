@@ -18,3 +18,6 @@ Changed the `take-photo-natively` command to simply trigger `new NativeCameraMod
 
 **5. Removed deprecated Camera plugin integration**
 Deleted `src/camera.ts` and removed unused `captureWithCameraPluginAndImport` and `hasCameraPluginInstalled` methods from `src/plugin.ts`. Updated `src/import-modal.ts` to open the new `NativeCameraModal` directly, replacing the old external plugin dependency entirely. Renamed command to `capture-by-camera`.
+
+**6. Fixed iOS file selection freezing bug**
+Fixed a bug in `src/native-camera.ts` where `document.body.removeChild(input)` was running synchronously immediately after `input.click()`. Mobile WebKit instances destroy the pending file picker if its DOM element is removed early, preventing `onchange` from firing and leaving the modal's Promise unresolved indefinitely (causing the infinite spinner). Moved `input.remove()` to the async callback handlers and added a fallback `window.addEventListener('focus')` hook for reliable cancellation.

@@ -91,21 +91,37 @@ export async function captureNativeCameraImages(app: App): Promise<File[]> {
 		input.onchange = async () => {
 			if (!input.files || input.files.length === 0) {
 				resolve([]);
+				input.remove();
 				return;
 			}
 			
 			const files = Array.from(input.files);
 			resolve(files);
+			input.remove();
 		};
 
 		// Clean up nicely if they cancel
 		input.oncancel = () => {
 			resolve([]);
+			input.remove();
 		};
+
+		// Fallback for iOS: if the user cancels and oncancel doesn't fire, 
+		// the window regains focus. Give it a short delay to allow onchange to fire first.
+		const onFocus = () => {
+			setTimeout(() => {
+				resolve([]);
+				if (input.parentNode) {
+					input.remove();
+				}
+				window.removeEventListener("focus", onFocus);
+			}, 1000);
+		};
+		window.addEventListener("focus", onFocus);
 
 		document.body.appendChild(input);
 		input.click();
-		document.body.removeChild(input);
+		// Do not remove the input synchronously, it will break iOS file picker!
 	});
 }
 
