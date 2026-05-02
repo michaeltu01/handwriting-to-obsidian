@@ -117,17 +117,16 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		
 		const notePath = this.getAvailableNotePath(folderPath, sanitizeFileNameSegment(title));
 
-		let sourceNames = files.map((file) => file.name);
-
+		let sourcePaths: string[] = [];
 		if (this.settings.includeOriginalDocument) {
-			const savedAttachmentNames: string[] = [];
+			const savedAttachmentPaths: string[] = [];
 			for (const file of files) {
 				const attachmentPath = await this.app.fileManager.getAvailablePathForAttachment(file.name, notePath);
 				const arrayBuffer = await file.arrayBuffer();
 				const createdAttachment = await this.app.vault.createBinary(attachmentPath, arrayBuffer);
-				savedAttachmentNames.push(createdAttachment.name);
+				savedAttachmentPaths.push(createdAttachment.path);
 			}
-			sourceNames = savedAttachmentNames;
+			sourcePaths = savedAttachmentPaths;
 		}
 
 		const noteContent = buildImportedNoteContent({
@@ -135,7 +134,7 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			includeOriginalDocument: this.settings.includeOriginalDocument,
 			markdown,
 			provider,
-			sourceNames,
+			sourcePaths,
 			sourceType: kind,
 			title,
 		});

@@ -20,7 +20,7 @@ interface ImportedNoteContentOptions {
 	includeOriginalDocument: boolean;
 	markdown: string;
 	provider: HandwritingProvider;
-	sourceNames: string[];
+	sourcePaths: string[];
 	sourceType: SupportedUploadKind;
 	title: string;
 }
@@ -113,21 +113,14 @@ export function buildImportedNoteContent(options: ImportedNoteContentOptions): s
 	const markdown = options.markdown.trim();
 	const title = normalizeTitle(options.title, "Imported note");
 	const titleHeading = markdown.startsWith("#") ? "" : `# ${title}\n\n`;
-	const sourceFilesFrontmatter = options.sourceNames.length === 1
-		? [`source_file: '${escapeYamlString(options.sourceNames[0])}'`]
-		: [
-			"source_files:",
-			...options.sourceNames.map((sourceName) => `  - '${escapeYamlString(sourceName)}'`),
-		];
 
-	const embeds = options.includeOriginalDocument && options.sourceNames.length > 0
-		? ["", "---", "", "## Original Document", "", ...options.sourceNames.map((sourceName) => `![[${sourceName}]]`)]
+	const embeds = options.includeOriginalDocument && options.sourcePaths.length > 0
+		? ["", "---", "", "## Original Document", "", ...options.sourcePaths.map((sourceName) => `![[${sourceName}]]`)]
 		: [];
 
 	return [
 		"---",
 		`title: '${escapeYamlString(title)}'`,
-		...sourceFilesFrontmatter,
 		`source_type: ${options.sourceType}`,
 		`imported_at: ${options.importedAt.toISOString()}`,
 		`llm_provider: ${options.provider}`,
