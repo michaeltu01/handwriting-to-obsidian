@@ -79,6 +79,12 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		return await this.importHandwrittenFiles([file]);
 	}
 
+	/**
+	 * Imports a list of handwritten files.
+	 * NOTE: This is where the importing happens!
+	 * @param files list of files to import
+	 * @returns a Promise containing the Obsidian file
+	 */
 	async importHandwrittenFiles(files: File[]): Promise<TFile> {
 		this.refreshApiKeyFromSettings();
 		if (!this.apiKey) {
@@ -105,19 +111,34 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			});
 
 		const title = inferNoteTitle(markdown, stripExtension(files[0].name));
+		
+		const folderPath = this.getResolvedOutputFolder();
+		await this.ensureFolderExists(folderPath);
+		
+		const notePath = this.getAvailableNotePath(folderPath, sanitizeFileNameSegment(title));
+
+		let sourcePaths: string[] = [];
+		if (this.settings.includeOriginalDocument) {
+			const savedAttachmentPaths: string[] = [];
+			for (const file of files) {
+				const attachmentPath = await this.app.fileManager.getAvailablePathForAttachment(file.name, notePath);
+				const arrayBuffer = await file.arrayBuffer();
+				const createdAttachment = await this.app.vault.createBinary(attachmentPath, arrayBuffer);
+				savedAttachmentPaths.push(createdAttachment.path);
+			}
+			sourcePaths = savedAttachmentPaths;
+		}
+
 		const noteContent = buildImportedNoteContent({
 			importedAt: new Date(),
+			includeOriginalDocument: this.settings.includeOriginalDocument,
 			markdown,
 			provider,
-			sourceNames: files.map((file) => file.name),
+			sourcePaths,
 			sourceType: kind,
 			title,
 		});
 
-		const folderPath = this.getResolvedOutputFolder();
-		await this.ensureFolderExists(folderPath);
-
-		const notePath = this.getAvailableNotePath(folderPath, sanitizeFileNameSegment(title));
 		const createdFile = await this.app.vault.create(notePath, noteContent);
 
 		if (this.settings.openAfterImport) {
