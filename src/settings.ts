@@ -11,6 +11,7 @@ export type HandwritingProvider = "openai" | "anthropic";
 
 export interface HandwritingPluginSettings {
 	apiKeySecretId: string;
+	includeOriginalDocument: boolean;
 	openAfterImport: boolean;
 	outputFolder: string;
 }
@@ -19,6 +20,7 @@ export const API_KEY_SECRET_ID = "handwriting-to-obsidian-api-key";
 
 export const DEFAULT_SETTINGS: HandwritingPluginSettings = {
 	apiKeySecretId: "",
+	includeOriginalDocument: false,
 	openAfterImport: true,
 	outputFolder: "Handwritten Notes",
 };
@@ -111,6 +113,18 @@ export class HandwritingSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.outputFolder)
 					.onChange(async (value) => {
 						this.plugin.settings.outputFolder = value.trim() || DEFAULT_SETTINGS.outputFolder;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Include original document")
+			.setDesc(`Include an embed of the original PDF or image(s) at the bottom of the transcribed Markdown note. The original file will be uploaded to the folder the user configures for attachments in the "Files and links" tab`)
+			.addToggle((toggle) => {
+				toggle
+					.setValue(this.plugin.settings.includeOriginalDocument)
+					.onChange(async (value) => {
+						this.plugin.settings.includeOriginalDocument = value;
 						await this.plugin.saveSettings();
 					});
 			});
