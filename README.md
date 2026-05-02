@@ -34,4 +34,4 @@ The plugin uses Obsidian's `requestUrl` API to send image and PDF inputs directl
 
 ### Mobile camera flow
 
-If the `obsidian-camera` community plugin is installed and enabled, the import modal on mobile shows a `Take photo with Camera plugin` button. That opens the camera plugin, waits for the next image it saves into the vault, and then runs the handwritten-note import pipeline on that captured photo.
+Run the plugin command "Capture handwritten note by camera" to capture handwritten notes using your phone's native camera application. You can capture multiple pages, one page at a time, and upload them all to be transcribed into one Obsidian note. Tested on iOS.

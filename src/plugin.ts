@@ -1,11 +1,4 @@
 import { Notice, Plugin, TFile, normalizePath } from "obsidian";
-import {
-	captureImagesWithCameraPlugin,
-	getCameraPluginCaptureFolder,
-	getCameraPluginCommandId,
-	hasCameraPluginInstalled,
-	showCameraCaptureNotice,
-} from "./camera";
 import { HandwrittenImportModal } from "./import-modal";
 import {
 	buildImportedNoteContent,
@@ -14,6 +7,7 @@ import {
 	inferNoteTitle,
 	sanitizeFileNameSegment,
 } from "./transcription";
+import { NativeCameraModal } from "./native-camera";
 import {
 	API_KEY_SECRET_ID,
 	detectProviderFromApiKey,
@@ -44,12 +38,13 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 				new HandwrittenImportModal(this.app, this).open();
 			},
 		});
+
 		this.addCommand({
-			id: "capture-handwritten-note-with-camera",
-			name: "Capture handwritten note with Camera plugin",
+			id: "capture-by-camera",
+			name: "Capture handwritten note by camera",
 			mobileOnly: true,
 			callback: () => {
-				void this.captureWithCameraPluginAndImport();
+				new NativeCameraModal(this.app, this).open();
 			},
 		});
 
@@ -162,33 +157,6 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		}));
 
 		return await this.importHandwrittenFiles(browserFiles);
-	}
-
-	hasCameraPluginInstalled(): boolean {
-		return hasCameraPluginInstalled(this.app);
-	}
-
-	async captureWithCameraPluginAndImport(): Promise<TFile> {
-		this.refreshApiKeyFromSettings();
-		if (!this.apiKey) {
-			throw new Error("Select an API key secret in the plugin settings before importing notes.");
-		}
-		this.getConfiguredProviderOrThrow();
-
-		const commandId = getCameraPluginCommandId(this.app);
-		if (!commandId) {
-			throw new Error("Could not find an Obsidian Camera command. Install and enable the Camera plugin first.");
-		}
-
-		showCameraCaptureNotice();
-		const capturedImages = await captureImagesWithCameraPlugin(
-			this.app,
-			commandId,
-			getCameraPluginCaptureFolder(this.app),
-		);
-		new Notice(`Captured ${capturedImages.length} image${capturedImages.length === 1 ? "" : "s"}. Transcribing note...`);
-
-		return await this.importVaultFiles(capturedImages);
 	}
 
 	async loadSettings() {
