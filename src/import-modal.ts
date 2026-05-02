@@ -43,7 +43,8 @@ export class HandwrittenImportModal extends Modal {
 		const sourceSectionEl = contentEl.createDiv({ cls: "hto-section" });
 
 		if (Platform.isMobileApp) {
-			this.cameraButtonEl = createSourceCard(sourceGridEl, {
+			this.cameraButtonEl = createActionRow(sourceSectionEl, {
+				buttonText: "Open",
 				description: "Take one or more photos. Import starts after the last saved image.",
 				icon: "camera",
 				title: "Take photo",
