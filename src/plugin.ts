@@ -8,6 +8,7 @@ import {
 	sanitizeFileNameSegment,
 } from "./transcription";
 import { NativeCameraModal } from "./native-camera";
+import { DiagramDebugModal } from "./diagramDebugModal";
 import {
 	API_KEY_SECRET_ID,
 	detectProviderFromApiKey,
@@ -45,6 +46,20 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			mobileOnly: true,
 			callback: () => {
 				new NativeCameraModal(this.app, this).open();
+			},
+		});
+
+		this.addCommand({
+			id: "debug-diagram-detection",
+			name: "Debug: detect diagrams in an image",
+			callback: () => {
+				this.refreshApiKeyFromSettings();
+				const provider = detectProviderFromApiKey(this.apiKey);
+				if (provider !== "anthropic") {
+					new Notice("Diagram detection requires an Anthropic API key.");
+					return;
+				}
+				new DiagramDebugModal(this.app, this.apiKey).open();
 			},
 		});
 
