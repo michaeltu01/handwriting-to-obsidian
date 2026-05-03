@@ -11,25 +11,30 @@
 
 import { App, Modal, Notice, Setting } from "obsidian";
 import { detectDiagrams, type DetectedDiagramBbox } from "./diagramDetection";
+import type { HandwritingProvider } from "./settings";
 import { resizeImageForVision, denormalizeBbox } from "./imageProcessing";
 
 export class DiagramDebugModal extends Modal {
 	private apiKey: string;
+	private provider: HandwritingProvider;
 	private fileInput!: HTMLInputElement;
 	private statusEl!: HTMLElement;
 	private resultContainer!: HTMLElement;
 
-	constructor(app: App, apiKey: string) {
+	constructor(app: App, apiKey: string, provider: HandwritingProvider) {
 		super(app);
 		this.apiKey = apiKey;
+		this.provider = provider;
 	}
 
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.createEl("h2", { text: "Diagram Detection Debug" });
+
+		const providerLabel = this.provider === "anthropic" ? "Claude" : "ChatGPT";
 		contentEl.createEl("p", {
-			text: "Pick an image. Plugin will resize it, ask Claude for diagram bounding boxes, and render them on top of the resized image.",
+			text: `Pick an image. Plugin will resize it, ask ${providerLabel} for diagram bounding boxes, and render them on top of the resized image.`,
 		});
 
 		new Setting(contentEl)
@@ -57,12 +62,16 @@ export class DiagramDebugModal extends Modal {
 
 		try {
 			const resized = await resizeImageForVision(file, { mimeType: "image/png" });
+			const providerLabel = this.provider === "anthropic" ? "Claude" : "ChatGPT";
 			this.statusEl.setText(
-				`Resized: ${resized.originalWidth}x${resized.originalHeight} -> ${resized.width}x${resized.height}. Calling Claude...`,
+				`Resized: ${resized.originalWidth}x${resized.originalHeight} -> ${resized.width}x${resized.height}. Calling ${providerLabel}...`,
 			);
 
 			const t0 = performance.now();
-			const result = await detectDiagrams(resized.file, this.apiKey);
+			const result = await detectDiagrams(resized.file, {
+				apiKey: this.apiKey,
+				provider: this.provider,
+			});
 			const elapsedMs = Math.round(performance.now() - t0);
 
 			this.statusEl.setText(

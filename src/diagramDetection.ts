@@ -1,16 +1,18 @@
 /**
  * diagramDetection.ts
  *
- * Calls Claude with an image and forces it (via tool-use) to return a structured
- * list of diagram bounding boxes in normalized 0-1000 coordinates.
+ * Detect diagram regions in an image and return their normalized bounding boxes.
+ * Supports both Anthropic (Claude) and OpenAI (GPT-4o) providers via tool use,
+ * so detection can run regardless of which API key the user has configured.
  *
- * This is intentionally a separate code path from the markdown transcription so
- * we can iterate on bbox accuracy without disturbing the working pipeline.
+ * The caller is responsible for resizing the image first; pass the resized File.
  */
 
 import { arrayBufferToBase64, requestUrl } from "obsidian";
+import type { HandwritingProvider } from "./settings";
 
 const ANTHROPIC_DETECTION_MODEL = "claude-opus-4-7";
+const OPENAI_DETECTION_MODEL = "gpt-4o";
 const ANTHROPIC_VERSION = "2023-06-01";
 const MAX_TOKENS = 2048;
 const NORMALIZATION_SCALE = 1000;
@@ -24,27 +26,41 @@ export interface DetectedDiagramBbox {
 
 export interface DiagramDetectionResult {
 	diagrams: DetectedDiagramBbox[];
-	/** Scale used for the normalized coordinates (always 1000 for now). */
 	normalizationScale: number;
-	/** Raw response, kept for debugging. */
 	raw: unknown;
+}
+
+export interface DiagramDetectionConfig {
+	apiKey: string;
+	provider: HandwritingProvider;
 }
 
 /**
  * Detect diagrams in an image. Returns bbox coordinates normalized to 0-1000.
- * The caller is responsible for resizing the image first; pass the resized File.
+ * Routes to the appropriate vision API based on the configured provider.
  */
 export async function detectDiagrams(
 	file: File,
-	apiKey: string,
+	config: DiagramDetectionConfig,
 ): Promise<DiagramDetectionResult> {
-	if (!apiKey.trim()) {
-		throw new Error("Missing Anthropic API key.");
+	if (!config.apiKey.trim()) {
+		throw new Error("Missing API key.");
 	}
 
 	const mediaType = file.type || "image/png";
 	const base64 = arrayBufferToBase64(await file.arrayBuffer());
 
+	if (config.provider === "anthropic") {
+		return await detectWithAnthropic(base64, mediaType, config.apiKey);
+	}
+	return await detectWithOpenAI(base64, mediaType, config.apiKey);
+}
+
+async function detectWithAnthropic(
+	base64: string,
+	mediaType: string,
+	apiKey: string,
+): Promise<DiagramDetectionResult> {
 	const response = await requestUrl({
 		url: "https://api.anthropic.com/v1/messages",
 		method: "POST",
@@ -56,7 +72,7 @@ export async function detectDiagrams(
 		body: JSON.stringify({
 			model: ANTHROPIC_DETECTION_MODEL,
 			max_tokens: MAX_TOKENS,
-			tools: [REPORT_DIAGRAMS_TOOL],
+			tools: [ANTHROPIC_REPORT_DIAGRAMS_TOOL],
 			tool_choice: { type: "tool", name: "report_diagrams" },
 			messages: [
 				{
@@ -64,15 +80,56 @@ export async function detectDiagrams(
 					content: [
 						{
 							type: "image",
-							source: {
-								type: "base64",
-								media_type: mediaType,
-								data: base64,
-							},
+							source: { type: "base64", media_type: mediaType, data: base64 },
 						},
+						{ type: "text", text: getDetectionPrompt() },
+					],
+				},
+			],
+		}),
+		throw: false,
+	});
+
+	if (response.status >= 400) {
+		throw new Error(formatApiError("Anthropic", response.json, response.text));
+	}
+
+	const toolInput = extractAnthropicToolInput(response.json);
+	if (!toolInput) {
+		throw new Error("Claude did not return a tool_use block.");
+	}
+
+	return {
+		diagrams: validateDiagramList(toolInput.diagrams),
+		normalizationScale: NORMALIZATION_SCALE,
+		raw: response.json,
+	};
+}
+
+async function detectWithOpenAI(
+	base64: string,
+	mediaType: string,
+	apiKey: string,
+): Promise<DiagramDetectionResult> {
+	const response = await requestUrl({
+		url: "https://api.openai.com/v1/responses",
+		method: "POST",
+		contentType: "application/json",
+		headers: { Authorization: `Bearer ${apiKey}` },
+		body: JSON.stringify({
+			model: OPENAI_DETECTION_MODEL,
+			max_output_tokens: MAX_TOKENS,
+			tools: [OPENAI_REPORT_DIAGRAMS_TOOL],
+			tool_choice: { type: "function", name: "report_diagrams" },
+			input: [
+				{
+					role: "user",
+					content: [
+						{ type: "input_text", text: getDetectionPrompt() },
 						{
-							type: "text",
-							text: getDetectionPrompt(),
+							type: "input_image",
+							image_url: `data:${mediaType};base64,${base64}`,
+							detail: "high",
 						},
 					],
 				},
@@ -82,70 +139,82 @@ export async function detectDiagrams(
 	});
 
 	if (response.status >= 400) {
-		throw new Error(formatApiError(response.json, response.text));
+		throw new Error(formatApiError("OpenAI", response.json, response.text));
 	}
 
-	const toolInput = extractToolInput(response.json);
+	const toolInput = extractOpenAIToolInput(response.json);
 	if (!toolInput) {
-		throw new Error("Claude did not return a tool_use block.");
+		throw new Error("OpenAI did not return a function_call output.");
 	}
-
-	const diagrams = validateDiagramList(toolInput.diagrams);
 
 	return {
-		diagrams,
+		diagrams: validateDiagramList(toolInput.diagrams),
 		normalizationScale: NORMALIZATION_SCALE,
 		raw: response.json,
 	};
 }
 
-const REPORT_DIAGRAMS_TOOL = {
+/**
+ * Shared schema for the report_diagrams tool. Anthropic and OpenAI use slightly
+ * different envelopes around it; the inner schema is identical.
+ */
+const REPORT_DIAGRAMS_SCHEMA = {
+	type: "object" as const,
+	properties: {
+		diagrams: {
+			type: "array",
+			description:
+				"List of diagrams found in the image. Empty array if there are no diagrams.",
+			items: {
+				type: "object",
+				properties: {
+					id: {
+						type: "integer",
+						description: "1-indexed id, in reading order (top-to-bottom, left-to-right).",
+					},
+					bbox: {
+						type: "object",
+						description:
+							"Bounding box in normalized image coordinates. (0,0) is the top-left of the image and (1000,1000) is the bottom-right. All values are integers.",
+						properties: {
+							x_min: { type: "integer", minimum: 0, maximum: 1000 },
+							y_min: { type: "integer", minimum: 0, maximum: 1000 },
+							x_max: { type: "integer", minimum: 0, maximum: 1000 },
+							y_max: { type: "integer", minimum: 0, maximum: 1000 },
+						},
+						required: ["x_min", "y_min", "x_max", "y_max"],
+					},
+					type: {
+						type: "string",
+						description:
+							"Short label for the kind of diagram. Examples: flowchart, state_machine, geometry, plot, sequence_diagram, free_sketch, table, schematic.",
+					},
+					description: {
+						type: "string",
+						description:
+							"One-sentence description of what the diagram depicts. Mention key nodes, edges, or labels you can read.",
+					},
+				},
+				required: ["id", "bbox", "type", "description"],
+			},
+		},
+	},
+	required: ["diagrams"],
+};
+
+const ANTHROPIC_REPORT_DIAGRAMS_TOOL = {
 	name: "report_diagrams",
 	description:
 		"Reports the bounding boxes of every visual diagram, sketch, chart, or non-text drawing found in the image. Do NOT report regions that contain only handwritten text.",
-	input_schema: {
-		type: "object",
-		properties: {
-			diagrams: {
-				type: "array",
-				description:
-					"List of diagrams found in the image. Empty array if there are no diagrams.",
-				items: {
-					type: "object",
-					properties: {
-						id: {
-							type: "integer",
-							description: "1-indexed id, in reading order (top-to-bottom, left-to-right).",
-						},
-						bbox: {
-							type: "object",
-							description:
-								"Bounding box in normalized image coordinates. (0,0) is the top-left of the image and (1000,1000) is the bottom-right. All values are integers.",
-							properties: {
-								x_min: { type: "integer", minimum: 0, maximum: 1000 },
-								y_min: { type: "integer", minimum: 0, maximum: 1000 },
-								x_max: { type: "integer", minimum: 0, maximum: 1000 },
-								y_max: { type: "integer", minimum: 0, maximum: 1000 },
-							},
-							required: ["x_min", "y_min", "x_max", "y_max"],
-						},
-						type: {
-							type: "string",
-							description:
-								"Short label for the kind of diagram. Examples: flowchart, state_machine, geometry, plot, sequence_diagram, free_sketch, table, schematic.",
-						},
-						description: {
-							type: "string",
-							description:
-								"One-sentence description of what the diagram depicts. Mention key nodes, edges, or labels you can read.",
-						},
-					},
-					required: ["id", "bbox", "type", "description"],
-				},
-			},
-		},
-		required: ["diagrams"],
-	},
+	input_schema: REPORT_DIAGRAMS_SCHEMA,
+};
+
+const OPENAI_REPORT_DIAGRAMS_TOOL = {
+	type: "function",
+	name: "report_diagrams",
+	description:
+		"Reports the bounding boxes of every visual diagram, sketch, chart, or non-text drawing found in the image. Do NOT report regions that contain only handwritten text.",
+	parameters: REPORT_DIAGRAMS_SCHEMA,
 };
 
 function getDetectionPrompt(): string {
@@ -181,7 +250,7 @@ function getDetectionPrompt(): string {
 	].join("\n");
 }
 
-function extractToolInput(responseJson: unknown): { diagrams: unknown } | null {
+function extractAnthropicToolInput(responseJson: unknown): { diagrams: unknown } | null {
 	if (!isRecord(responseJson)) return null;
 	const content = responseJson.content;
 	if (!Array.isArray(content)) return null;
@@ -194,6 +263,28 @@ function extractToolInput(responseJson: unknown): { diagrams: unknown } | null {
 			&& isRecord(block.input)
 		) {
 			return block.input as { diagrams: unknown };
+		}
+	}
+	return null;
+}
+
+function extractOpenAIToolInput(responseJson: unknown): { diagrams: unknown } | null {
+	if (!isRecord(responseJson)) return null;
+	const output = responseJson.output;
+	if (!Array.isArray(output)) return null;
+
+	for (const item of output) {
+		if (!isRecord(item)) continue;
+		if (item.type !== "function_call") continue;
+		if (item.name !== "report_diagrams") continue;
+		if (typeof item.arguments !== "string") continue;
+		try {
+			const parsed = JSON.parse(item.arguments);
+			if (isRecord(parsed)) {
+				return parsed as { diagrams: unknown };
+			}
+		} catch {
+			return null;
 		}
 	}
 	return null;
@@ -236,11 +327,11 @@ function toInt(value: unknown): number | null {
 	return null;
 }
 
-function formatApiError(json: unknown, text: string): string {
+function formatApiError(provider: string, json: unknown, text: string): string {
 	if (isRecord(json) && isRecord(json.error) && typeof json.error.message === "string") {
-		return `Anthropic detection request failed: ${json.error.message}`;
+		return `${provider} detection request failed: ${json.error.message}`;
 	}
-	return `Anthropic detection request failed: ${text.trim() || "unknown error"}`;
+	return `${provider} detection request failed: ${text.trim() || "unknown error"}`;
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

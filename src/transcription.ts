@@ -201,7 +201,8 @@ function getMarkdownTranscriptionPrompt(imageCount: number): string {
 		"- Prefer structured Markdown over plain paragraphs.",
 		"- Keep the page order intact.",
 		"- If text is unclear, mark it as [illegible].",
-		"- If there is a diagram or non-text sketch, insert a short placeholder like [diagram: triangle with arrows and labels].",
+		"- For each diagram, sketch, chart, or non-text drawing on the page, insert a placeholder of the form <DIAGRAM_n> on its own line, where n is a 1-indexed counter restarting at 1 for the first diagram and incrementing for each subsequent diagram (top-to-bottom, left-to-right reading order). Do NOT describe the diagram in prose. Do NOT use [diagram: ...] notation. Just emit the placeholder.",
+		"- Inline arrow shorthand like 'X -> Y' between handwritten words is text, not a diagram. Do not emit a placeholder for it.",
 		"- Return only the Markdown transcription with no extra commentary.",
 	].join("\n");
 }
