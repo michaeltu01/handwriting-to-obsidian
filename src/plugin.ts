@@ -8,12 +8,24 @@ import {
 	sanitizeFileNameSegment,
 } from "./transcription";
 import { NativeCameraModal } from "./native-camera";
+import { DiagramDebugModal } from "./diagramDebugModal";
+import { detectDiagrams, type DetectedDiagramBbox } from "./diagramDetection";
+import { cropImage, denormalizeBbox, resizeImageForVision } from "./imageProcessing";
+import {
+	buildDiagramBlock,
+	findRegenerableBlocks,
+	listPlaceholderIds,
+	rewriteBlockWithMermaid,
+	substitutePlaceholders,
+} from "./diagramPlaceholder";
+import { regenerateDiagram } from "./diagramRegeneration";
 import {
 	API_KEY_SECRET_ID,
 	detectProviderFromApiKey,
 	DEFAULT_SETTINGS,
 	getApiKeyValidationError as getStoredApiKeyValidationError,
 	type HandwritingPluginSettings,
+	type HandwritingProvider,
 	HandwritingSettingTab,
 	normalizeApiKeyInput,
 } from "./settings";
@@ -45,6 +57,32 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			mobileOnly: true,
 			callback: () => {
 				new NativeCameraModal(this.app, this).open();
+			},
+		});
+
+		this.addCommand({
+			id: "debug-diagram-detection",
+			name: "Debug: detect diagrams in an image",
+			callback: () => {
+				this.refreshApiKeyFromSettings();
+				const provider = detectProviderFromApiKey(this.apiKey);
+				if (!provider) {
+					new Notice("Set an Anthropic or OpenAI API key in plugin settings first.");
+					return;
+				}
+				new DiagramDebugModal(this.app, this.apiKey, provider).open();
+			},
+		});
+
+		this.addCommand({
+			id: "regenerate-diagrams",
+			name: "Regenerate diagrams in this note",
+			editorCheckCallback: (checking, _editor, view) => {
+				const file = view.file;
+				if (!file) return false;
+				if (checking) return true;
+				void this.regenerateDiagramsInNote(file);
+				return true;
 			},
 		});
 
@@ -106,10 +144,10 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			});
 
 		const title = inferNoteTitle(markdown, stripExtension(files[0].name));
-		
+
 		const folderPath = this.getResolvedOutputFolder();
 		await this.ensureFolderExists(folderPath);
-		
+
 		const notePath = this.getAvailableNotePath(folderPath, sanitizeFileNameSegment(title));
 
 		let sourcePaths: string[] = [];
@@ -124,10 +162,32 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			sourcePaths = savedAttachmentPaths;
 		}
 
+		// Replace <DIAGRAM_n> placeholders with crop embeds + regen-prompt callouts.
+		// We only do this for image inputs; PDFs go through a different transcription
+		// path and we don't have per-page detection wired up for them yet.
+		const placeholderIds = listPlaceholderIds(markdown);
+		let processedMarkdown = markdown;
+		if (kind === "image" && placeholderIds.length > 0) {
+			try {
+				processedMarkdown = await this.processDiagramsForImport({
+					markdown,
+					sourceFiles: files,
+					notePath,
+					provider,
+				});
+			} catch (err) {
+				console.warn(
+					"Diagram detection failed during import; placeholders will remain as-is.",
+					err,
+				);
+				new Notice("Diagram detection failed — note created without diagram crops.");
+			}
+		}
+
 		const noteContent = buildImportedNoteContent({
 			importedAt: new Date(),
 			includeOriginalDocument: this.settings.includeOriginalDocument,
-			markdown,
+			markdown: processedMarkdown,
 			provider,
 			sourcePaths,
 			sourceType: kind,
@@ -264,6 +324,166 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 
 			suffix += 1;
 		}
+	}
+
+	/**
+	 * Runs detection on each source image, crops every detected diagram,
+	 * saves crops as attachments, and replaces <DIAGRAM_n> placeholders in the
+	 * markdown with image embeds plus the regen-prompt callout.
+	 *
+	 * Numbering rule: diagrams are numbered globally across all source pages
+	 * in the order pages were uploaded. This matches the transcription prompt
+	 * which numbers placeholders the same way.
+	 */
+	private async processDiagramsForImport(args: {
+		markdown: string;
+		sourceFiles: File[];
+		notePath: string;
+		provider: HandwritingProvider;
+	}): Promise<string> {
+		const { markdown, sourceFiles, notePath, provider } = args;
+
+		const blocksById = new Map<number, string>();
+		let nextDiagramId = 1;
+
+		for (const sourceFile of sourceFiles) {
+			const resized = await resizeImageForVision(sourceFile, { mimeType: "image/png" });
+			const detection = await detectDiagrams(resized.file, {
+				apiKey: this.apiKey,
+				provider,
+			});
+
+			for (const bbox of detection.diagrams) {
+				const id = nextDiagramId++;
+				const cropFile = await this.cropAndSaveDiagram({
+					sourceFile,
+					originalWidth: resized.originalWidth,
+					originalHeight: resized.originalHeight,
+					bbox,
+					notePath,
+					id,
+				});
+				if (!cropFile) continue;
+
+				blocksById.set(id, buildDiagramBlock({
+					id,
+					imageVaultPath: cropFile.path,
+				}));
+			}
+		}
+
+		return substitutePlaceholders(markdown, blocksById);
+	}
+
+	/**
+	 * Crops a bbox out of the original (full-resolution) source image and writes
+	 * it to the vault as a PNG attachment. Returns the created TFile, or null
+	 * if the crop failed.
+	 */
+	private async cropAndSaveDiagram(args: {
+		sourceFile: File;
+		originalWidth: number;
+		originalHeight: number;
+		bbox: DetectedDiagramBbox;
+		notePath: string;
+		id: number;
+	}): Promise<TFile | null> {
+		const { sourceFile, originalWidth, originalHeight, bbox, notePath, id } = args;
+
+		const pixelBox = denormalizeBbox(bbox.bbox, originalWidth, originalHeight);
+		if (pixelBox.width <= 0 || pixelBox.height <= 0) return null;
+
+		const cropFile = await cropImage(sourceFile, pixelBox, {
+			mimeType: "image/png",
+			filenameSuffix: `diagram-${id}`,
+		});
+
+		const attachmentPath = await this.app.fileManager.getAvailablePathForAttachment(
+			cropFile.name,
+			notePath,
+		);
+		const buffer = await cropFile.arrayBuffer();
+		return await this.app.vault.createBinary(attachmentPath, buffer);
+	}
+
+	/**
+	 * Walks every regenerable diagram block in the active note and replaces
+	 * its callout with a Mermaid code block (or other strategy output).
+	 * The original image embed is preserved.
+	 */
+	private async regenerateDiagramsInNote(file: TFile): Promise<void> {
+		this.refreshApiKeyFromSettings();
+		const provider = detectProviderFromApiKey(this.apiKey);
+		if (!this.apiKey || !provider) {
+			new Notice("Set an Anthropic or OpenAI API key in plugin settings first.");
+			return;
+		}
+
+		const original = await this.app.vault.read(file);
+		const blocks = findRegenerableBlocks(original);
+		if (blocks.length === 0) {
+			new Notice("No regenerable diagrams found in this note.");
+			return;
+		}
+
+		new Notice(`Regenerating ${blocks.length} diagram(s)...`);
+
+		// Walk blocks back-to-front so earlier replacements don't shift later indexes.
+		let updated = original;
+		for (let i = blocks.length - 1; i >= 0; i--) {
+			const block = blocks[i];
+			try {
+				const cropFile = this.resolveImageEmbed(block.imageLine, file);
+				if (!cropFile) {
+					console.warn(`Could not resolve image embed for diagram ${block.id}.`);
+					continue;
+				}
+				const cropBytes = await this.app.vault.readBinary(cropFile);
+				const cropImageFile = new File([cropBytes], cropFile.name, { type: "image/png" });
+
+				// Detection metadata isn't persisted in the note, so we synthesize a
+				// minimal bbox stub. The cropped image alone gives the regenerator
+				// enough to work with; description/type are best-effort defaults.
+				const stubBbox: DetectedDiagramBbox = {
+					id: block.id,
+					bbox: { x_min: 0, y_min: 0, x_max: 1000, y_max: 1000 },
+					type: "flowchart",
+					description: "Hand-drawn diagram from imported note.",
+				};
+
+				const regen = await regenerateDiagram({
+					croppedImage: cropImageFile,
+					bbox: stubBbox,
+					apiKey: this.apiKey,
+					provider,
+					method: this.settings.diagramRegenerationMethod,
+				});
+
+				const newBlock = rewriteBlockWithMermaid(block, regen.payload);
+				updated = updated.slice(0, block.startIndex) + newBlock + updated.slice(block.endIndex);
+			} catch (err) {
+				console.warn(`Regeneration failed for diagram ${block.id}:`, err);
+				new Notice(`Regeneration failed for diagram ${block.id}. See console.`);
+			}
+		}
+
+		if (updated !== original) {
+			await this.app.vault.modify(file, updated);
+			new Notice("Diagram regeneration complete.");
+		}
+	}
+
+	/**
+	 * Resolves an Obsidian image embed line like `![[name.png]]` to the actual
+	 * TFile in the vault. Returns null if the file cannot be found.
+	 */
+	private resolveImageEmbed(imageLine: string, sourceNote: TFile): TFile | null {
+		const match = imageLine.match(/^!\[\[([^\]]+)\]\]$/);
+		if (!match) return null;
+		const linkText = match[1].split("|")[0].trim();
+		const resolved = this.app.metadataCache.getFirstLinkpathDest(linkText, sourceNote.path);
+		if (resolved instanceof TFile) return resolved;
+		return null;
 	}
 }
 
