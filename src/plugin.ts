@@ -379,6 +379,16 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 	 * Crops a bbox out of the original (full-resolution) source image and writes
 	 * it to the vault as a PNG attachment. Returns the created TFile, or null
 	 * if the crop failed.
+	 *
+	 * The crop is written to an `attachments/` subfolder next to the note, so
+	 * imported diagrams stay grouped with their note instead of leaking into
+	 * whatever global attachment folder the user has configured.
+	 *
+	 * We pad the bbox by 8% on each side before cropping. Vision models are
+	 * not reliably tight or accurate on bbox edges, especially on busy pages
+	 * with multiple regions. Padding is cheap insurance: a slightly oversized
+	 * crop is harmless for both viewing and downstream Mermaid generation,
+	 * but a too-tight crop can lose nodes from the diagram entirely.
 	 */
 	private async cropAndSaveDiagram(args: {
 		sourceFile: File;
@@ -393,17 +403,44 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		const pixelBox = denormalizeBbox(bbox.bbox, originalWidth, originalHeight);
 		if (pixelBox.width <= 0 || pixelBox.height <= 0) return null;
 
-		const cropFile = await cropImage(sourceFile, pixelBox, {
+		const paddedBox = padBbox(pixelBox, 0.08, originalWidth, originalHeight);
+
+		const cropFile = await cropImage(sourceFile, paddedBox, {
 			mimeType: "image/png",
 			filenameSuffix: `diagram-${id}`,
 		});
 
-		const attachmentPath = await this.app.fileManager.getAvailablePathForAttachment(
-			cropFile.name,
-			notePath,
-		);
+		// Place the crop next to the note in `<note-folder>/attachments/`.
+		const noteFolder = notePath.substring(0, notePath.lastIndexOf("/"));
+		const attachmentsFolder = noteFolder
+			? normalizePath(`${noteFolder}/attachments`)
+			: "attachments";
+		await this.ensureFolderExists(attachmentsFolder);
+
+		const attachmentPath = this.getAvailableAttachmentPath(attachmentsFolder, cropFile.name);
 		const buffer = await cropFile.arrayBuffer();
 		return await this.app.vault.createBinary(attachmentPath, buffer);
+	}
+
+	/**
+	 * Returns a vault path inside `folder` that does not yet exist, by appending
+	 * a numeric suffix if needed. Mirrors getAvailablePathForAttachment but lets
+	 * us choose the folder ourselves.
+	 */
+	private getAvailableAttachmentPath(folder: string, fileName: string): string {
+		const dotIndex = fileName.lastIndexOf(".");
+		const base = dotIndex === -1 ? fileName : fileName.substring(0, dotIndex);
+		const ext = dotIndex === -1 ? "" : fileName.substring(dotIndex);
+
+		let suffix = 0;
+		while (true) {
+			const candidateName = suffix === 0 ? `${base}${ext}` : `${base} ${suffix}${ext}`;
+			const candidatePath = normalizePath(`${folder}/${candidateName}`);
+			if (!this.app.vault.getAbstractFileByPath(candidatePath)) {
+				return candidatePath;
+			}
+			suffix += 1;
+		}
 	}
 
 	/**
@@ -495,4 +532,33 @@ function looksLikeSecretReference(value: string): boolean {
 	return value.length > 0
 		&& !detectProviderFromApiKey(value)
 		&& /^[a-z0-9][a-z0-9-_]*$/i.test(value);
+}
+
+/**
+ * Expands a pixel bbox by `fraction` on each side, clipped to the image bounds.
+ * fraction=0.08 means add 8% of the bbox's width to each horizontal edge and
+ * 8% of its height to each vertical edge. The expansion is relative to the
+ * bbox size, not the image size, so it scales proportionally with how big the
+ * detected region is.
+ */
+function padBbox(
+	bbox: { x: number; y: number; width: number; height: number },
+	fraction: number,
+	imageWidth: number,
+	imageHeight: number,
+): { x: number; y: number; width: number; height: number } {
+	const padX = bbox.width * fraction;
+	const padY = bbox.height * fraction;
+
+	const x = Math.max(0, bbox.x - padX);
+	const y = Math.max(0, bbox.y - padY);
+	const right = Math.min(imageWidth, bbox.x + bbox.width + padX);
+	const bottom = Math.min(imageHeight, bbox.y + bbox.height + padY);
+
+	return {
+		x,
+		y,
+		width: right - x,
+		height: bottom - y,
+	};
 }

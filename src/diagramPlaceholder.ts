@@ -53,18 +53,32 @@ export function buildDiagramBlock(options: {
 
 /**
  * Replaces every `<DIAGRAM_n>` in the markdown with the corresponding rendered
- * block. `blocksById` must contain a block for every id referenced in the
- * markdown; missing ids are left as-is so the user can see which ones failed.
+ * block. Placeholders that have no matching block in `blocksById` are removed
+ * (replaced with empty string); this happens when the transcription LLM
+ * over-counts diagrams that the detection step did not separately identify.
+ * Logs the gap to console so the mismatch is visible during development.
  */
 export function substitutePlaceholders(
 	markdown: string,
 	blocksById: Map<number, string>,
 ): string {
-	return markdown.replace(PLACEHOLDER_PATTERN, (match, idStr) => {
+	const unmatched: number[] = [];
+	const result = markdown.replace(PLACEHOLDER_PATTERN, (match, idStr) => {
 		const id = Number(idStr);
 		const block = blocksById.get(id);
-		return block ?? match;
+		if (block) return block;
+		unmatched.push(id);
+		return "";
 	});
+
+	if (unmatched.length > 0) {
+		console.warn(
+			"diagramPlaceholder: dropped placeholders not matched by detection:",
+			unmatched,
+			"(transcription saw diagrams the detection step did not return a bbox for)",
+		);
+	}
+	return result;
 }
 
 /**
