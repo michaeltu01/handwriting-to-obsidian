@@ -60,7 +60,7 @@ export async function extractMarkdownFromImages(
 		? await transcribeImagesWithAnthropic(files, config.apiKey)
 		: await transcribeImagesWithOpenAI(files, config.apiKey);
 
-	const markdown = rawMarkdown.trim();
+	const markdown = stripMarkdownFence(rawMarkdown.trim());
 	if (!markdown) {
 		throw new Error("The model returned an empty transcription.");
 	}
@@ -82,12 +82,31 @@ export async function extractMarkdownFromFile(
 		? await transcribeWithAnthropic(file, kind, base64, config.apiKey)
 		: await transcribeWithOpenAI(file, kind, base64, config.apiKey);
 
-	const markdown = rawMarkdown.trim();
+	const markdown = stripMarkdownFence(rawMarkdown.trim());
 	if (!markdown) {
 		throw new Error("The model returned an empty transcription.");
 	}
 
 	return { kind, markdown };
+}
+
+/**
+ * Strips a leading ```markdown (or generic ```) fence and matching trailing ```
+ * if the LLM wrapped its entire response in a code block. This is a common
+ * failure mode: the prompt asks for "raw markdown", but some models output
+ *   ```markdown
+ *   # Heading
+ *   ...
+ *   ```
+ * which would render the entire note as one code block in Obsidian.
+ *
+ * Only strips when the fence is a top-level wrapper around the whole content.
+ * Code blocks inside the markdown body (like ```mermaid) are left untouched.
+ */
+function stripMarkdownFence(text: string): string {
+	const trimmed = text.trim();
+	const fenceMatch = trimmed.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/i);
+	return fenceMatch ? fenceMatch[1].trim() : trimmed;
 }
 
 export function inferNoteTitle(markdown: string, fallback: string): string {
@@ -201,7 +220,15 @@ function getMarkdownTranscriptionPrompt(imageCount: number): string {
 		"- Prefer structured Markdown over plain paragraphs.",
 		"- Keep the page order intact.",
 		"- If text is unclear, mark it as [illegible].",
-		"- If there is a diagram or non-text sketch, insert a short placeholder like [diagram: triangle with arrows and labels].",
+		"",
+		"Diagram handling (IMPORTANT):",
+		"- For each hand-drawn diagram, flowchart, sketch, or non-text drawing on the page, insert ONLY a placeholder of the form <DIAGRAM_n> on its own line. n is a 1-indexed counter starting at 1 for the first diagram, incrementing for each subsequent diagram in reading order (top-to-bottom, left-to-right).",
+		"- A diagram's text content (node labels, arrow labels, captions inside the drawing) belongs entirely to the placeholder. DO NOT also transcribe those labels as Markdown headings, bullets, paragraphs, or anywhere else outside the placeholder. The placeholder fully represents the diagram.",
+		"- Inline arrow shorthand like 'X -> Y' written between handwritten words in a sentence is text, not a diagram. Do not emit a placeholder for it.",
+		"",
+		"Formatting constraints:",
+		"- Do NOT use blockquote/callout syntax (lines starting with '>') unless the original handwriting is clearly a quote. Do not wrap headings or short text fragments in blockquotes.",
+		"- Do NOT wrap your entire response in a ```markdown fence. Return raw Markdown directly.",
 		"- Return only the Markdown transcription with no extra commentary.",
 	].join("\n");
 }
