@@ -515,7 +515,7 @@ async function transcribeWithAnthropic(
 	return markdown;
 }
 
-function extractOpenAIOutputText(responseJson: unknown): string {
+export function extractOpenAIOutputText(responseJson: unknown): string {
 	if (!isRecord(responseJson)) {
 		return "";
 	}
@@ -546,7 +546,7 @@ function extractOpenAIOutputText(responseJson: unknown): string {
 	return parts.join("\n").trim();
 }
 
-function extractAnthropicOutputText(responseJson: unknown): string {
+export function extractAnthropicOutputText(responseJson: unknown): string {
 	if (!isRecord(responseJson)) {
 		return "";
 	}

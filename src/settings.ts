@@ -12,12 +12,11 @@ export type HandwritingProvider = "openai" | "anthropic";
 /**
  * How "Regenerate diagrams in this note" turns a hand-drawn diagram into a
  * machine-rendered version. 'auto' picks Mermaid for structured diagrams
- * (flowcharts, state machines, mind maps) and gpt-image for everything else.
- * 'mermaid' and 'gpt-image' force a single strategy.
+ * (flowcharts, state machines, mind maps) and gpt-image for freeform sketches
+ * and geometry. 'mermaid' and 'gpt-image' force a single strategy.
  *
- * Only Mermaid is implemented today; 'gpt-image' is reserved for a follow-up
- * PR. Until that lands, both 'auto' (when it would route to gpt-image) and
- * 'gpt-image' fall back to Mermaid with a console warning.
+ * gpt-image requires an OpenAI API key (uses the gpt-image-1 model). Mermaid
+ * works with either provider's key.
  */
 export type DiagramRegenerationMethod = "auto" | "mermaid" | "gpt-image";
 
@@ -157,12 +156,12 @@ export class HandwritingSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Diagram regeneration method")
-			.setDesc("How the \"Regenerate diagrams in this note\" command turns a hand-drawn diagram into a machine-rendered version. Auto picks Mermaid for structured diagrams (flowcharts, state machines) and gpt-image for freeform sketches. (gpt-image is not implemented yet and currently falls back to Mermaid.)")
+			.setDesc("How the \"Regenerate diagrams in this note\" command turns a hand-drawn diagram into a machine-rendered version. Auto picks Mermaid for structured diagrams (flowcharts, state machines) and GPT image for freeform sketches. GPT image requires an OpenAI API key.")
 			.addDropdown((dropdown) => {
 				dropdown
 					.addOption("auto", "Auto (route by diagram type)")
 					.addOption("mermaid", "Mermaid only")
-					.addOption("gpt-image", "GPT image only (not implemented)")
+					.addOption("gpt-image", "GPT image only")
 					.setValue(this.plugin.settings.diagramRegenerationMethod)
 					.onChange(async (value) => {
 						this.plugin.settings.diagramRegenerationMethod = value as DiagramRegenerationMethod;

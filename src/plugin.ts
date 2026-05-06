@@ -16,6 +16,7 @@ import {
 	findRegenerableBlocks,
 	listPlaceholderIds,
 	rewriteBlockWithMermaid,
+	rewriteBlockWithGptImage,
 	substitutePlaceholders,
 } from "./diagramPlaceholder";
 import { regenerateDiagram } from "./diagramRegeneration";
@@ -496,7 +497,31 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 					method: this.settings.diagramRegenerationMethod,
 				});
 
-				const newBlock = rewriteBlockWithMermaid(block, regen.payload);
+				let newBlock: string;
+				if (regen.usedStrategy === "mermaid") {
+					newBlock = rewriteBlockWithMermaid(block, regen.mermaidCode);
+				} else {
+					// Save the generated PNG next to the note in the same attachments
+					// folder used during import, then build a second image embed.
+					const noteFolder = file.parent ? file.parent.path : "";
+					const attachmentsFolder = noteFolder
+						? normalizePath(`${noteFolder}/attachments`)
+						: "attachments";
+					await this.ensureFolderExists(attachmentsFolder);
+
+					const baseName = stripExtension(file.name);
+					const generatedFileName = `${baseName}-diagram-${block.id}-regen.png`;
+					const generatedPath = this.getAvailableAttachmentPath(
+						attachmentsFolder,
+						generatedFileName,
+					);
+					const buffer = regen.pngBytes.slice().buffer;
+					await this.app.vault.createBinary(generatedPath, buffer);
+
+					const generatedEmbedName = generatedPath.split("/").pop() ?? generatedFileName;
+					const embedLine = `![[${generatedEmbedName}]]`;
+					newBlock = rewriteBlockWithGptImage(block, embedLine);
+				}
 				updated = updated.slice(0, block.startIndex) + newBlock + updated.slice(block.endIndex);
 			} catch (err) {
 				console.warn(`Regeneration failed for diagram ${block.id}:`, err);

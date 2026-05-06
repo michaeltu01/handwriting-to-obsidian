@@ -157,6 +157,24 @@ export function rewriteBlockWithMermaid(
 	].join("\n");
 }
 
+/**
+ * Replace a regenerable block with the original handwritten image embed plus
+ * a second image embed pointing at the GPT-generated clean version.
+ * The original is kept above the regenerated image so the user can compare.
+ */
+export function rewriteBlockWithGptImage(
+	block: RegenerableBlock,
+	generatedImageEmbed: string,
+): string {
+	return [
+		startMarker(block.id),
+		block.imageLine,
+		"",
+		generatedImageEmbed,
+		endMarker(),
+	].join("\n");
+}
+
 function startMarker(id: number): string {
 	return `%%handwriting-to-obsidian:diagram id="${id}"%%`;
 }
