@@ -30,6 +30,8 @@ import {
 	normalizeApiKeyInput,
 } from "./settings";
 import { getMimeTypeFromExtension, getUploadSelectionError, isPdfUpload } from "./upload";
+import { applyLinks, buildNoteSummary, discoverLinks, type ProposedLink } from "./auto-linking";
+import { LinkConfirmationModal } from "./link-confirmation-modal";
 
 export default class HandwritingToObsidianPlugin extends Plugin {
 	settings!: HandwritingPluginSettings;
@@ -184,6 +186,16 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			}
 		}
 
+		// Auto-link to existing vault notes if enabled.
+		if (this.settings.autoLink) {
+			try {
+				processedMarkdown = await this.runAutoLinking(processedMarkdown, provider);
+			} catch (err) {
+				console.warn("Auto-linking failed; note created without links.", err);
+				new Notice("Auto-linking failed — note created without links.");
+			}
+		}
+
 		const noteContent = buildImportedNoteContent({
 			importedAt: new Date(),
 			includeOriginalDocument: this.settings.includeOriginalDocument,
@@ -268,6 +280,61 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		}
 
 		new Notice("Open Handwriting to Obsidian settings to update your API key.");
+	}
+
+	/**
+	 * Collects candidate vault notes, sends them with the transcription to the
+	 * LLM for semantic matching, shows a confirmation modal, and applies the
+	 * user's chosen links to the markdown.
+	 */
+	private async runAutoLinking(
+		markdown: string,
+		provider: HandwritingProvider,
+	): Promise<string> {
+		const scope = this.settings.autoLinkScope.trim();
+		let candidates = this.app.vault.getMarkdownFiles();
+		if (scope) {
+			const normalizedScope = normalizePath(scope);
+			candidates = candidates.filter((f) => f.path.startsWith(normalizedScope + "/"));
+		}
+
+		if (candidates.length === 0) return markdown;
+
+		// Build compact summaries of each candidate note.
+		const summaries = await Promise.all(
+			candidates.map(async (f) => {
+				const content = await this.app.vault.cachedRead(f);
+				return {
+					basename: f.basename,
+					path: f.path,
+					summary: buildNoteSummary(f.basename, content),
+				};
+			}),
+		);
+
+		// Call the LLM to discover semantic links.
+		const proposedLinks = await discoverLinks({
+			markdown,
+			candidateNotes: summaries,
+			apiKey: this.apiKey,
+			provider,
+		});
+
+		if (proposedLinks.length === 0) return markdown;
+
+		// Show confirmation modal and wait for user decision.
+		const confirmedLinks = await new Promise<ProposedLink[]>((resolve) => {
+			new LinkConfirmationModal(
+				this.app,
+				proposedLinks,
+				(confirmed) => resolve(confirmed),
+				() => resolve([]),
+			).open();
+		});
+
+		if (confirmedLinks.length === 0) return markdown;
+
+		return applyLinks(markdown, confirmedLinks);
 	}
 
 	private getConfiguredProviderOrThrow() {
