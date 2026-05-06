@@ -220,6 +220,8 @@ function getMarkdownTranscriptionPrompt(imageCount: number): string {
 		"- Prefer structured Markdown over plain paragraphs.",
 		"- Keep the page order intact.",
 		"- If text is unclear, mark it as [illegible].",
+		"- Do not transcribe text that has a strikethrough or is crossed out.",
+		"- Write math notation in MathJax, Obsidian's script for writing math notation.",
 		"",
 		"Diagram handling (IMPORTANT):",
 		"- For each hand-drawn diagram, flowchart, sketch, or non-text drawing on the page, insert ONLY a placeholder of the form <DIAGRAM_n> on its own line. n is a 1-indexed counter starting at 1 for the first diagram, incrementing for each subsequent diagram in reading order (top-to-bottom, left-to-right).",
