@@ -146,7 +146,7 @@ export class HandwritingSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Template folder")
 			.setDesc("Optional folder containing Markdown templates used to format transcriptions.")
-			.addText((text) => {  // FIXME: This should be a component that only searches for file paths
+			.addText((text) => {  // TODO: This should be a component that only searches for file paths
 				text
 					.setPlaceholder("(disabled)")
 					.setValue(this.plugin.settings.templateFolder)
