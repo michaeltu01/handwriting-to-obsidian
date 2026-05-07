@@ -27,6 +27,8 @@ export interface HandwritingPluginSettings {
 	openAfterImport: boolean;
 	outputFolder: string;
 	diagramRegenerationMethod: DiagramRegenerationMethod;
+	autoLink: boolean;
+	autoLinkScope: string;
 }
 
 export const API_KEY_SECRET_ID = "handwriting-to-obsidian-api-key";
@@ -37,6 +39,8 @@ export const DEFAULT_SETTINGS: HandwritingPluginSettings = {
 	openAfterImport: true,
 	outputFolder: "Handwritten Notes",
 	diagramRegenerationMethod: "mermaid",
+	autoLink: true,
+	autoLinkScope: "",
 };
 
 /**
@@ -154,6 +158,34 @@ export class HandwritingSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					});
 			});
+
+		new Setting(containerEl)
+			.setName("Auto-link to existing notes")
+			.setDesc("After transcription, use the LLM to find semantic references to your existing vault notes and propose wikilinks before creating the note.")
+			.addToggle((toggle) => {
+				toggle
+					.setValue(this.plugin.settings.autoLink)
+					.onChange(async (value) => {
+						this.plugin.settings.autoLink = value;
+						await this.plugin.saveSettings();
+						this.display();
+					});
+			});
+
+		if (this.plugin.settings.autoLink) {
+			new Setting(containerEl)
+				.setName("Auto-link scope")
+				.setDesc("Limit linking to notes inside this folder (leave empty for entire vault).")
+				.addText((text) => {
+					text
+						.setPlaceholder("(entire vault)")
+						.setValue(this.plugin.settings.autoLinkScope)
+						.onChange(async (value) => {
+							this.plugin.settings.autoLinkScope = value.trim();
+							await this.plugin.saveSettings();
+						});
+				});
+		}
 
 		new Setting(containerEl)
 			.setName("Diagram regeneration method")
