@@ -1,7 +1,8 @@
-import { App, Modal, Notice, Platform, setIcon } from "obsidian";
+import { App, Modal, Notice, Platform, TFile, TFolder, normalizePath, setIcon } from "obsidian";
 import type HandwritingToObsidianPlugin from "./plugin";
 import { getUploadSelectionError, isPdfUpload } from "./upload";
 import { NativeCameraModal } from "./native-camera";
+import { TemplatePickerModal } from "./template-modal";
 
 export class HandwrittenImportModal extends Modal {
 	private selectedFiles: File[] = [];
@@ -17,9 +18,17 @@ export class HandwrittenImportModal extends Modal {
 	private convertButtonIconEl!: HTMLSpanElement;
 	private updateApiKeyButtonEl!: HTMLButtonElement;
 	private imageButtonEl!: HTMLButtonElement;
+	private templateButtonEl!: HTMLButtonElement;
+	private templateSelectedSectionEl!: HTMLDivElement;
+	private templateSelectedCardEl!: HTMLDivElement;
+	private templateSelectedIconEl!: HTMLDivElement;
+	private templateSelectedNameEl!: HTMLDivElement;
+	private templateSelectedMetaEl!: HTMLDivElement;
+	private templateClearButtonEl!: HTMLButtonElement;
 	private cameraButtonEl: HTMLButtonElement | null = null;
 	private imageInputEl!: HTMLInputElement;
 	private isProcessing = false;
+	private selectedTemplateFile: TFile | null = null;
 
 	constructor(app: App, plugin: HandwritingToObsidianPlugin) {
 		super(app);
@@ -62,6 +71,41 @@ export class HandwrittenImportModal extends Modal {
 			description: "Photo, scan, screenshot, gallery images, or a PDF.",
 			icon: "files",
 			title: "Choose files",
+		});
+
+		const templateSectionEl = contentEl.createDiv({ cls: "hto-section" });
+		this.templateButtonEl = createActionRow(templateSectionEl, {
+			buttonText: "Choose",
+			description: "Optional Markdown template to format the transcription.",
+			icon: "file-text",
+			title: "Choose template",
+		});
+
+		this.templateSelectedSectionEl = templateSectionEl.createDiv({
+			cls: "hto-selected-section is-hidden",
+		});
+		this.templateSelectedCardEl = this.templateSelectedSectionEl.createDiv({
+			cls: "hto-selected-file-card",
+		});
+		this.templateSelectedIconEl = this.templateSelectedCardEl.createDiv({
+			cls: "hto-selected-file-icon",
+		});
+		setIcon(this.templateSelectedIconEl, "file-text");
+		const templateSelectedBodyEl = this.templateSelectedCardEl.createDiv({
+			cls: "hto-selected-file-body",
+		});
+		this.templateSelectedNameEl = templateSelectedBodyEl.createDiv({
+			cls: "hto-selected-file-name",
+			text: "",
+		});
+		this.templateSelectedMetaEl = templateSelectedBodyEl.createDiv({
+			cls: "hto-selected-file-meta",
+			text: "",
+		});
+		this.templateClearButtonEl = this.templateSelectedSectionEl.createEl("button", {
+			attr: { type: "button" },
+			cls: "hto-secondary-button hto-template-clear-button",
+			text: "Clear template",
 		});
 
 		this.selectedSectionEl = contentEl.createDiv({ cls: "hto-section hto-selected-section is-hidden" });
@@ -111,6 +155,8 @@ export class HandwrittenImportModal extends Modal {
 
 		this.imageButtonEl.addEventListener("click", () => this.imageInputEl.click());
 		this.imageInputEl.addEventListener("change", () => this.handleFileSelection(this.imageInputEl.files));
+		this.templateButtonEl.addEventListener("click", () => this.openTemplatePicker());
+		this.templateClearButtonEl.addEventListener("click", () => this.clearTemplateSelection());
 		this.updateApiKeyButtonEl.addEventListener("click", () => {
 			this.close();
 			this.plugin.openApiKeySettings();
@@ -164,7 +210,10 @@ export class HandwrittenImportModal extends Modal {
 		this.updateActions();
 
 		try {
-			const createdFile = await this.plugin.importHandwrittenFiles(this.selectedFiles);
+			const createdFile = await this.plugin.importHandwrittenFiles(
+				this.selectedFiles,
+				this.selectedTemplateFile ?? undefined,
+			);
 			this.setStatus(`Created ${createdFile.name}`, "success");
 			new Notice(`Created ${createdFile.path}`);
 			this.close();
@@ -196,6 +245,9 @@ export class HandwrittenImportModal extends Modal {
 		this.imageButtonEl.classList.toggle("is-selected", this.selectedFiles.length > 0);
 		this.imageButtonEl.disabled = disabled;
 		this.imageInputEl.disabled = disabled;
+		this.templateButtonEl.classList.toggle("is-selected", Boolean(this.selectedTemplateFile));
+		this.templateButtonEl.disabled = disabled;
+		this.templateClearButtonEl.disabled = disabled || !this.selectedTemplateFile;
 		this.convertButtonEl.disabled = disabled || this.selectedFiles.length === 0 || selectionError !== null;
 		this.convertButtonLabelEl.textContent = disabled ? "Loading…" : "Convert to Markdown";
 		setIcon(this.convertButtonIconEl, disabled ? "loader-2" : "wand");
@@ -258,6 +310,55 @@ export class HandwrittenImportModal extends Modal {
 		this.selectedFileMetaEl.textContent = this.selectedFiles.length === 1
 			? formatFileSize(totalBytes)
 			: `${firstFile.name} + ${this.selectedFiles.length - 1} more · ${formatFileSize(totalBytes)}`;
+	}
+
+	private openTemplatePicker(): void {
+		const folderSetting = this.plugin.settings.templateFolder.trim();
+		if (!folderSetting) {
+			new Notice("Set a template folder in the plugin settings first.");
+			return;
+		}
+
+		const normalizedFolder = normalizePath(folderSetting);
+		const folder = this.app.vault.getAbstractFileByPath(normalizedFolder);
+		if (!folder || !(folder instanceof TFolder)) {
+			new Notice("Template folder not found. Check the path in plugin settings.");
+			return;
+		}
+
+		new TemplatePickerModal(
+			this.app,
+			normalizedFolder,
+			(template) => {
+				this.selectedTemplateFile = template;
+				this.updateTemplateState();
+				this.updateActions();
+			},
+			() => {
+				this.updateActions();
+			},
+		).open();
+	}
+
+	private clearTemplateSelection(): void {
+		this.selectedTemplateFile = null;
+		this.updateTemplateState();
+		this.updateActions();
+	}
+
+	private updateTemplateState(): void {
+		if (!this.selectedTemplateFile) {
+			this.templateSelectedSectionEl.classList.add("is-hidden");
+			this.templateSelectedNameEl.textContent = "";
+			this.templateSelectedMetaEl.textContent = "";
+			setIcon(this.templateSelectedIconEl, "file-text");
+			return;
+		}
+
+		this.templateSelectedSectionEl.classList.remove("is-hidden");
+		this.templateSelectedNameEl.textContent = this.selectedTemplateFile.basename;
+		this.templateSelectedMetaEl.textContent = this.selectedTemplateFile.path;
+		setIcon(this.templateSelectedIconEl, "file-text");
 	}
 }
 

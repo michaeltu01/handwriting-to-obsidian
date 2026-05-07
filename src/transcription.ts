@@ -10,9 +10,15 @@ import type { HandwritingProvider } from "./settings";
 
 export type SupportedUploadKind = "image" | "pdf";
 
+interface TemplateContext {
+	path: string;
+	content: string;
+}
+
 interface ExtractionConfig {
 	apiKey: string;
 	provider: HandwritingProvider;
+	template?: TemplateContext;
 }
 
 interface ImportedNoteContentOptions {
@@ -22,6 +28,7 @@ interface ImportedNoteContentOptions {
 	provider: HandwritingProvider;
 	sourcePaths: string[];
 	sourceType: SupportedUploadKind;
+	templatePath?: string;
 	title: string;
 }
 
@@ -57,8 +64,8 @@ export async function extractMarkdownFromImages(
 	}
 
 	const rawMarkdown = config.provider === "anthropic"
-		? await transcribeImagesWithAnthropic(files, config.apiKey)
-		: await transcribeImagesWithOpenAI(files, config.apiKey);
+		? await transcribeImagesWithAnthropic(files, config.apiKey, config.template)
+		: await transcribeImagesWithOpenAI(files, config.apiKey, config.template);
 
 	const markdown = stripMarkdownFence(rawMarkdown.trim());
 	if (!markdown) {
@@ -79,8 +86,8 @@ export async function extractMarkdownFromFile(
 
 	const base64 = arrayBufferToBase64(await file.arrayBuffer());
 	const rawMarkdown = config.provider === "anthropic"
-		? await transcribeWithAnthropic(file, kind, base64, config.apiKey)
-		: await transcribeWithOpenAI(file, kind, base64, config.apiKey);
+		? await transcribeWithAnthropic(file, kind, base64, config.apiKey, config.template)
+		: await transcribeWithOpenAI(file, kind, base64, config.apiKey, config.template);
 
 	const markdown = stripMarkdownFence(rawMarkdown.trim());
 	if (!markdown) {
@@ -109,14 +116,27 @@ function stripMarkdownFence(text: string): string {
 	return fenceMatch ? fenceMatch[1].trim() : trimmed;
 }
 
+function splitFrontmatter(markdown: string): { frontmatter: string | null; body: string } {
+	const match = markdown.match(/^---\s*\n([\s\S]*?)\n---\s*\n?/);
+	if (!match) {
+		return { frontmatter: null, body: markdown };
+	}
+
+	return {
+		frontmatter: match[1].trim(),
+		body: markdown.slice(match[0].length).trimStart(),
+	};
+}
+
 export function inferNoteTitle(markdown: string, fallback: string): string {
 	const trimmedMarkdown = markdown.trim();
-	const headingMatch = trimmedMarkdown.match(/^#\s+(.+)$/m);
+	const { body } = splitFrontmatter(trimmedMarkdown);
+	const headingMatch = body.match(/^#\s+(.+)$/m);
 	if (headingMatch?.[1]) {
 		return normalizeTitle(headingMatch[1], fallback);
 	}
 
-	const firstMeaningfulLine = trimmedMarkdown
+	const firstMeaningfulLine = body
 		.split(/\r?\n/)
 		.map((line) => line.trim())
 		.find((line) => line.length > 0);
@@ -131,22 +151,25 @@ export function inferNoteTitle(markdown: string, fallback: string): string {
 export function buildImportedNoteContent(options: ImportedNoteContentOptions): string {
 	const markdown = options.markdown.trim();
 	const title = normalizeTitle(options.title, "Imported note");
-	const titleHeading = markdown.startsWith("#") ? "" : `# ${title}\n\n`;
-
-	const embeds = options.includeOriginalDocument && options.sourcePaths.length > 0
+	const { frontmatter, body } = splitFrontmatter(markdown);
+	const titleHeading = body.startsWith("#") ? "" : `# ${title}\n\n`;
+	// Merge any model-emitted frontmatter into the plugin's frontmatter block.
+	const frontmatterLines = frontmatter ? frontmatter.split(/\r?\n/) : [];
+	const originalEmbeds = options.includeOriginalDocument && options.sourcePaths.length > 0
 		? ["", "---", "", "## Original Document", "", ...options.sourcePaths.map((sourceName) => `![[${sourceName}]]`)]
 		: [];
 
 	return [
 		"---",
+		...frontmatterLines,
 		`title: '${escapeYamlString(title)}'`,
 		`source_type: ${options.sourceType}`,
 		`imported_at: ${options.importedAt.toISOString()}`,
 		`llm_provider: ${options.provider}`,
 		"---",
 		"",
-		`${titleHeading}${markdown}`.trim(),
-		...embeds,
+		`${titleHeading}${body}`.trim(),
+		...originalEmbeds,
 		"",
 	].join("\n");
 }
@@ -207,12 +230,12 @@ function escapeYamlString(value: string): string {
 	return value.replace(/'/g, "''");
 }
 
-function getMarkdownTranscriptionPrompt(imageCount: number): string {
+function getMarkdownTranscriptionPrompt(imageCount: number, template?: TemplateContext): string {
 	const pageInstruction = imageCount > 1
 		? "These images are ordered pages from the same handwritten note. Merge them into one Markdown note in the same order."
 		: "Convert this handwritten note into clean Markdown.";
 
-	return [
+	const basePrompt = [
 		pageInstruction,
 		"",
 		"Requirements:",
@@ -233,9 +256,32 @@ function getMarkdownTranscriptionPrompt(imageCount: number): string {
 		"- Do NOT wrap your entire response in a ```markdown fence. Return raw Markdown directly.",
 		"- Return only the Markdown transcription with no extra commentary.",
 	].join("\n");
+
+	if (!template || !template.content.trim()) {
+		return basePrompt;
+	}
+
+	return [
+		basePrompt,
+		"",
+		"Template formatting (IMPORTANT):",
+		"- Use the template below as the target structure. Adapt headings, sections, and ordering to match it.",
+		"- If the template includes YAML frontmatter, include frontmatter in your output and fill those fields using note content. Leave a field blank if the note provides no value; do not invent details.",
+		"- Do not copy placeholder text from the template unless it is supported by the handwriting.",
+		"- Do not include the template markers or template text verbatim in your output.",
+		"",
+		`Template source: ${template.path}`,
+		"<<<TEMPLATE>>>",
+		template.content.trim(),
+		"<<<END TEMPLATE>>>",
+	].join("\n");
 }
 
-async function transcribeImagesWithOpenAI(files: File[], apiKey: string): Promise<string> {
+async function transcribeImagesWithOpenAI(
+	files: File[],
+	apiKey: string,
+	template?: TemplateContext,
+): Promise<string> {
 	if (!apiKey.trim()) {
 		throw new Error("Missing OpenAI API key.");
 	}
@@ -243,7 +289,7 @@ async function transcribeImagesWithOpenAI(files: File[], apiKey: string): Promis
 	const content = [
 		{
 			type: "input_text",
-			text: getMarkdownTranscriptionPrompt(files.length),
+			text: getMarkdownTranscriptionPrompt(files.length, template),
 		},
 		...await Promise.all(files.map(async (file) => ({
 			type: "input_image" as const,
@@ -289,6 +335,7 @@ async function transcribeWithOpenAI(
 	kind: SupportedUploadKind,
 	base64: string,
 	apiKey: string,
+	template?: TemplateContext,
 ): Promise<string> {
 	if (!apiKey.trim()) {
 		throw new Error("Missing OpenAI API key.");
@@ -302,13 +349,13 @@ async function transcribeWithOpenAI(
 			},
 			{
 				type: "input_text",
-				text: getMarkdownTranscriptionPrompt(1),
+				text: getMarkdownTranscriptionPrompt(1, template),
 			},
 		]
 		: [
 			{
 				type: "input_text",
-				text: getMarkdownTranscriptionPrompt(1),
+				text: getMarkdownTranscriptionPrompt(1, template),
 			},
 			{
 				type: "input_image",
@@ -391,7 +438,11 @@ async function uploadPdfToOpenAI(file: File, apiKey: string): Promise<string> {
 	return response.json.id;
 }
 
-async function transcribeImagesWithAnthropic(files: File[], apiKey: string): Promise<string> {
+async function transcribeImagesWithAnthropic(
+	files: File[],
+	apiKey: string,
+	template?: TemplateContext,
+): Promise<string> {
 	if (!apiKey.trim()) {
 		throw new Error("Missing Anthropic API key.");
 	}
@@ -399,7 +450,7 @@ async function transcribeImagesWithAnthropic(files: File[], apiKey: string): Pro
 	const content = [
 		{
 			type: "text",
-			text: getMarkdownTranscriptionPrompt(files.length),
+			text: getMarkdownTranscriptionPrompt(files.length, template),
 		},
 		...await Promise.all(files.map(async (file) => ({
 			type: "image" as const,
@@ -449,6 +500,7 @@ async function transcribeWithAnthropic(
 	kind: SupportedUploadKind,
 	base64: string,
 	apiKey: string,
+	template?: TemplateContext,
 ): Promise<string> {
 	if (!apiKey.trim()) {
 		throw new Error("Missing Anthropic API key.");
@@ -466,7 +518,7 @@ async function transcribeWithAnthropic(
 			},
 			{
 				type: "text",
-				text: getMarkdownTranscriptionPrompt(1),
+				text: getMarkdownTranscriptionPrompt(1, template),
 			},
 		]
 		: [
@@ -480,7 +532,7 @@ async function transcribeWithAnthropic(
 			},
 			{
 				type: "text",
-				text: getMarkdownTranscriptionPrompt(1),
+				text: getMarkdownTranscriptionPrompt(1, template),
 			},
 		];
 

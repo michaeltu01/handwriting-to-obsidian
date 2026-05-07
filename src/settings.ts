@@ -26,6 +26,7 @@ export interface HandwritingPluginSettings {
 	includeOriginalDocument: boolean;
 	openAfterImport: boolean;
 	outputFolder: string;
+	templateFolder: string;
 	diagramRegenerationMethod: DiagramRegenerationMethod;
 	autoLink: boolean;
 	autoLinkScope: string;
@@ -38,6 +39,7 @@ export const DEFAULT_SETTINGS: HandwritingPluginSettings = {
 	includeOriginalDocument: false,
 	openAfterImport: true,
 	outputFolder: "Handwritten Notes",
+	templateFolder: "",
 	diagramRegenerationMethod: "mermaid",
 	autoLink: true,
 	autoLinkScope: "",
@@ -131,6 +133,19 @@ export class HandwritingSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.outputFolder)
 					.onChange(async (value) => {
 						this.plugin.settings.outputFolder = value.trim() || DEFAULT_SETTINGS.outputFolder;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Template folder")
+			.setDesc("Optional folder containing Markdown templates used to format transcriptions.")
+			.addText((text) => {  // FIXME: This should be a component that only searches for file paths
+				text
+					.setPlaceholder("(disabled)")
+					.setValue(this.plugin.settings.templateFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.templateFolder = value.trim();
 						await this.plugin.saveSettings();
 					});
 			});
