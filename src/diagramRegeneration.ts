@@ -73,6 +73,9 @@ function pickStrategy(ctx: RegenerationContext): "mermaid" | "gpt-image" {
 	const type = ctx.bbox.type.toLowerCase();
 	const mermaidFriendly = new Set([
 		"flowchart",
+		"protocol_diagram",
+		"interaction_diagram",
+		"communication_diagram",
 		"state_machine",
 		"sequence_diagram",
 		"mind_map",

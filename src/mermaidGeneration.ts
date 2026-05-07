@@ -188,7 +188,7 @@ function getGenerationPrompt(input: MermaidGenerationInput): string {
 		`Description from prior pass: ${input.description}`,
 		"",
 		"Guidelines:",
-		"- Default to 'flowchart TD' (top-down). Use 'flowchart LR' if the diagram clearly flows left-to-right. Use 'stateDiagram-v2' only for explicit state machines, 'sequenceDiagram' for time-ordered actor interactions.",
+		"- Default to 'flowchart TD' (top-down). Use 'flowchart LR' if the diagram clearly flows left-to-right. Use 'sequenceDiagram' for protocol/communication layouts with participants and message arrows. Use 'stateDiagram-v2' only for explicit state machines.",
 		"- Use simple ASCII node IDs (A, B, C, ... or n1, n2, ...). Put the actual label in brackets with double quotes: A[\"Sensory store\"].",
 		"- Reuse the same node ID throughout. Do NOT redefine a node multiple times.",
 		"- For edges, use --> for directed arrows, --- for undirected, -.-> for dashed.",

@@ -11,7 +11,9 @@ import { NativeCameraModal } from "./native-camera";
 import { DiagramDebugModal } from "./diagramDebugModal";
 import { detectDiagrams, type DetectedDiagramBbox } from "./diagramDetection";
 import { cropImage, denormalizeBbox, resizeImageForVision } from "./imageProcessing";
+import { renderPdfPagesToImages } from "./pdfRendering";
 import {
+	appendUnreferencedDiagramBlocks,
 	buildDiagramBlock,
 	findRegenerableBlocks,
 	listPlaceholderIds,
@@ -164,17 +166,22 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		}
 
 		// Replace <DIAGRAM_n> placeholders with crop embeds + regen-prompt callouts.
-		// We only do this for image inputs; PDFs go through a different transcription
-		// path and we don't have per-page detection wired up for them yet.
+		// PDFs are rendered to page images first so they can use the same bbox
+		// detection and crop pipeline as photo imports.
 		const placeholderIds = listPlaceholderIds(markdown);
 		let processedMarkdown = markdown;
-		if (kind === "image" && placeholderIds.length > 0) {
+		if (placeholderIds.length > 0 || kind === "pdf") {
 			try {
+				const diagramSourceFiles = kind === "pdf"
+					? (await renderPdfPagesToImages(files[0])).map((page) => page.file)
+					: files;
+
 				processedMarkdown = await this.processDiagramsForImport({
 					markdown,
-					sourceFiles: files,
+					sourceFiles: diagramSourceFiles,
 					notePath,
 					provider,
+					expectedDiagramCount: placeholderIds.length,
 				});
 			} catch (err) {
 				console.warn(
@@ -341,20 +348,42 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		sourceFiles: File[];
 		notePath: string;
 		provider: HandwritingProvider;
+		expectedDiagramCount?: number;
 	}): Promise<string> {
-		const { markdown, sourceFiles, notePath, provider } = args;
+		const { markdown, sourceFiles, notePath, provider, expectedDiagramCount } = args;
 
 		const blocksById = new Map<number, string>();
 		let nextDiagramId = 1;
+		const preparedSources: Array<{
+			sourceFile: File;
+			resized: Awaited<ReturnType<typeof resizeImageForVision>>;
+		}> = [];
 
 		for (const sourceFile of sourceFiles) {
 			const resized = await resizeImageForVision(sourceFile, { mimeType: "image/png" });
-			const detection = await detectDiagrams(resized.file, {
-				apiKey: this.apiKey,
-				provider,
-			});
+			preparedSources.push({ sourceFile, resized });
+		}
 
-			for (const bbox of detection.diagrams) {
+		let detections = await this.detectDiagramsForPreparedSources(preparedSources, provider);
+		const detectedCount = countDetectedDiagrams(detections);
+		if (expectedDiagramCount && detectedCount < expectedDiagramCount) {
+			const retryDetections = await this.detectDiagramsForPreparedSources(
+				preparedSources,
+				provider,
+				{
+					expectedDiagramCount,
+					mode: "lenient",
+				},
+			);
+			if (countDetectedDiagrams(retryDetections) > detectedCount) {
+				detections = retryDetections;
+			}
+		}
+
+		for (const detection of detections) {
+			const { sourceFile, resized } = detection;
+
+			for (const bbox of refineDiagramBboxes(detection.diagrams.diagrams)) {
 				const id = nextDiagramId++;
 				const cropFile = await this.cropAndSaveDiagram({
 					sourceFile,
@@ -373,7 +402,45 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			}
 		}
 
-		return substitutePlaceholders(markdown, blocksById);
+		return appendUnreferencedDiagramBlocks(
+			substitutePlaceholders(markdown, blocksById),
+			blocksById,
+			markdown,
+		);
+	}
+
+	private async detectDiagramsForPreparedSources(
+		preparedSources: Array<{
+			sourceFile: File;
+			resized: Awaited<ReturnType<typeof resizeImageForVision>>;
+		}>,
+		provider: HandwritingProvider,
+		options: {
+			expectedDiagramCount?: number;
+			mode?: "default" | "lenient";
+		} = {},
+	): Promise<Array<{
+		sourceFile: File;
+		resized: Awaited<ReturnType<typeof resizeImageForVision>>;
+		diagrams: Awaited<ReturnType<typeof detectDiagrams>>;
+	}>> {
+		const results: Array<{
+			sourceFile: File;
+			resized: Awaited<ReturnType<typeof resizeImageForVision>>;
+			diagrams: Awaited<ReturnType<typeof detectDiagrams>>;
+		}> = [];
+
+		for (const prepared of preparedSources) {
+			const diagrams = await detectDiagrams(prepared.resized.file, {
+				apiKey: this.apiKey,
+				provider,
+				expectedDiagramCount: options.expectedDiagramCount,
+				mode: options.mode,
+			});
+			results.push({ ...prepared, diagrams });
+		}
+
+		return results;
 	}
 
 	/**
@@ -404,7 +471,7 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 		const pixelBox = denormalizeBbox(bbox.bbox, originalWidth, originalHeight);
 		if (pixelBox.width <= 0 || pixelBox.height <= 0) return null;
 
-		const paddedBox = padBbox(pixelBox, 0.08, originalWidth, originalHeight);
+		const paddedBox = expandDiagramCropBbox(pixelBox, bbox, originalWidth, originalHeight);
 
 		const cropFile = await cropImage(sourceFile, paddedBox, {
 			mimeType: "image/png",
@@ -559,21 +626,179 @@ function looksLikeSecretReference(value: string): boolean {
 		&& /^[a-z0-9][a-z0-9-_]*$/i.test(value);
 }
 
+function countDetectedDiagrams(
+	detections: Array<{ diagrams: Awaited<ReturnType<typeof detectDiagrams>> }>,
+): number {
+	return detections.reduce((sum, detection) => sum + detection.diagrams.diagrams.length, 0);
+}
+
+function refineDiagramBboxes(diagrams: DetectedDiagramBbox[]): DetectedDiagramBbox[] {
+	const filtered = diagrams.filter((diagram) => !isLikelyStandaloneTextStrip(diagram));
+	return mergeNearbyDiagramBboxes(filtered);
+}
+
+function isLikelyStandaloneTextStrip(diagram: DetectedDiagramBbox): boolean {
+	const { bbox } = diagram;
+	const width = bbox.x_max - bbox.x_min;
+	const height = bbox.y_max - bbox.y_min;
+	if (width < 520 || height > 170) {
+		return false;
+	}
+
+	const text = `${diagram.type} ${diagram.description}`.toLowerCase();
+	const hasStructuralCue = /\b(protocol|interaction|communication|sequence|participant|alice|bob|client|server|message|node|box|circle|stick|flow|chart|table|axis|sketch|tree|branch|state|mind map)\b/.test(text);
+	if (hasStructuralCue) {
+		return false;
+	}
+
+	const hasTextOnlyCue = /\b(text|formula|equation|caption|heading|paragraph|definition|line|sentence)\b/.test(text);
+	return hasTextOnlyCue || height < 120;
+}
+
+function mergeNearbyDiagramBboxes(diagrams: DetectedDiagramBbox[]): DetectedDiagramBbox[] {
+	let merged = diagrams
+		.map(normalizeDiagramBbox)
+		.filter((diagram) => diagram.bbox.x_max > diagram.bbox.x_min && diagram.bbox.y_max > diagram.bbox.y_min)
+		.sort(compareDiagramPosition);
+
+	let changed = true;
+	while (changed) {
+		changed = false;
+		const next: DetectedDiagramBbox[] = [];
+
+		for (const diagram of merged) {
+			const index = next.findIndex((candidate) => shouldMergeDiagramBboxes(candidate, diagram));
+			if (index === -1) {
+				next.push(diagram);
+			} else {
+				next[index] = mergeDiagramBboxPair(next[index], diagram);
+				changed = true;
+			}
+		}
+
+		merged = next.sort(compareDiagramPosition);
+	}
+
+	return merged.map((diagram, index) => ({ ...diagram, id: index + 1 }));
+}
+
+function shouldMergeDiagramBboxes(a: DetectedDiagramBbox, b: DetectedDiagramBbox): boolean {
+	const ab = a.bbox;
+	const bb = b.bbox;
+	const xOverlap = Math.max(0, Math.min(ab.x_max, bb.x_max) - Math.max(ab.x_min, bb.x_min));
+	const yOverlap = Math.max(0, Math.min(ab.y_max, bb.y_max) - Math.max(ab.y_min, bb.y_min));
+	const minWidth = Math.min(ab.x_max - ab.x_min, bb.x_max - bb.x_min);
+	const minHeight = Math.min(ab.y_max - ab.y_min, bb.y_max - bb.y_min);
+	const xOverlapRatio = minWidth > 0 ? xOverlap / minWidth : 0;
+	const yOverlapRatio = minHeight > 0 ? yOverlap / minHeight : 0;
+	const verticalGap = Math.max(0, Math.max(ab.y_min, bb.y_min) - Math.min(ab.y_max, bb.y_max));
+	const horizontalGap = Math.max(0, Math.max(ab.x_min, bb.x_min) - Math.min(ab.x_max, bb.x_max));
+	const unionHeight = Math.max(ab.y_max, bb.y_max) - Math.min(ab.y_min, bb.y_min);
+	const unionWidth = Math.max(ab.x_max, bb.x_max) - Math.min(ab.x_min, bb.x_min);
+
+	if (xOverlapRatio >= 0.35 && yOverlapRatio >= 0.35) {
+		return true;
+	}
+
+	const relatedText = `${a.type} ${a.description} ${b.type} ${b.description}`.toLowerCase();
+	const protocolLike = /\b(protocol|interaction|communication|sequence|participant|alice|bob|client|server|message|stick)\b/.test(relatedText);
+	const stripLike = isWideShortBbox(a) || isWideShortBbox(b);
+
+	if (xOverlapRatio >= 0.28 && verticalGap <= (protocolLike || stripLike ? 115 : 65) && unionHeight <= 460) {
+		return true;
+	}
+
+	if (yOverlapRatio >= 0.28 && horizontalGap <= 80 && unionWidth <= 980) {
+		return true;
+	}
+
+	return false;
+}
+
+function mergeDiagramBboxPair(a: DetectedDiagramBbox, b: DetectedDiagramBbox): DetectedDiagramBbox {
+	return {
+		id: Math.min(a.id, b.id),
+		bbox: {
+			x_min: Math.min(a.bbox.x_min, b.bbox.x_min),
+			y_min: Math.min(a.bbox.y_min, b.bbox.y_min),
+			x_max: Math.max(a.bbox.x_max, b.bbox.x_max),
+			y_max: Math.max(a.bbox.y_max, b.bbox.y_max),
+		},
+		type: chooseMergedDiagramType(a.type, b.type),
+		description: [a.description, b.description].filter(Boolean).join(" "),
+	};
+}
+
+function chooseMergedDiagramType(a: string, b: string): string {
+	if (a === b) return a;
+	const combined = `${a} ${b}`.toLowerCase();
+	if (/\b(protocol|interaction|communication|sequence)\b/.test(combined)) {
+		return "interaction_diagram";
+	}
+	if (combined.includes("table")) return "table";
+	if (combined.includes("flow")) return "flowchart";
+	return a || b || "unknown";
+}
+
+function normalizeDiagramBbox(diagram: DetectedDiagramBbox): DetectedDiagramBbox {
+	const xMin = clampNumber(Math.round(diagram.bbox.x_min), 0, 1000);
+	const yMin = clampNumber(Math.round(diagram.bbox.y_min), 0, 1000);
+	const xMax = clampNumber(Math.round(diagram.bbox.x_max), 0, 1000);
+	const yMax = clampNumber(Math.round(diagram.bbox.y_max), 0, 1000);
+	return {
+		...diagram,
+		bbox: {
+			x_min: Math.min(xMin, xMax),
+			y_min: Math.min(yMin, yMax),
+			x_max: Math.max(xMin, xMax),
+			y_max: Math.max(yMin, yMax),
+		},
+	};
+}
+
+function compareDiagramPosition(a: DetectedDiagramBbox, b: DetectedDiagramBbox): number {
+	const y = a.bbox.y_min - b.bbox.y_min;
+	return Math.abs(y) > 25 ? y : a.bbox.x_min - b.bbox.x_min;
+}
+
+function isWideShortBbox(diagram: DetectedDiagramBbox): boolean {
+	const width = diagram.bbox.x_max - diagram.bbox.x_min;
+	const height = diagram.bbox.y_max - diagram.bbox.y_min;
+	return width >= 520 && height <= 220;
+}
+
 /**
- * Expands a pixel bbox by `fraction` on each side, clipped to the image bounds.
- * fraction=0.08 means add 8% of the bbox's width to each horizontal edge and
- * 8% of its height to each vertical edge. The expansion is relative to the
- * bbox size, not the image size, so it scales proportionally with how big the
- * detected region is.
+ * Expands model bboxes before cropping. Detection models often return tight
+ * horizontal strips for handwritten protocol diagrams; a larger crop is much
+ * more useful for later regeneration than a precise but incomplete crop.
  */
-function padBbox(
+function expandDiagramCropBbox(
 	bbox: { x: number; y: number; width: number; height: number },
-	fraction: number,
+	diagram: DetectedDiagramBbox,
 	imageWidth: number,
 	imageHeight: number,
 ): { x: number; y: number; width: number; height: number } {
-	const padX = bbox.width * fraction;
-	const padY = bbox.height * fraction;
+	const text = `${diagram.type} ${diagram.description}`.toLowerCase();
+	const protocolLike = /\b(protocol|interaction|communication|sequence|participant|alice|bob|client|server|message|stick)\b/.test(text);
+	const stripLike = bbox.width / imageWidth > 0.45 && bbox.height / imageHeight < 0.24;
+	const padXFraction = protocolLike ? 0.2 : 0.16;
+	const padYFraction = protocolLike || stripLike ? 0.55 : 0.25;
+
+	const padded = padBbox(bbox, padXFraction, padYFraction, imageWidth, imageHeight);
+	const minWidth = protocolLike ? imageWidth * 0.62 : stripLike ? imageWidth * 0.55 : 0;
+	const minHeight = protocolLike ? imageHeight * 0.3 : stripLike ? imageHeight * 0.26 : 0;
+	return ensureMinBboxSize(padded, minWidth, minHeight, imageWidth, imageHeight);
+}
+
+function padBbox(
+	bbox: { x: number; y: number; width: number; height: number },
+	fractionX: number,
+	fractionY: number,
+	imageWidth: number,
+	imageHeight: number,
+): { x: number; y: number; width: number; height: number } {
+	const padX = bbox.width * fractionX;
+	const padY = bbox.height * fractionY;
 
 	const x = Math.max(0, bbox.x - padX);
 	const y = Math.max(0, bbox.y - padY);
@@ -586,4 +811,25 @@ function padBbox(
 		width: right - x,
 		height: bottom - y,
 	};
+}
+
+function ensureMinBboxSize(
+	bbox: { x: number; y: number; width: number; height: number },
+	minWidth: number,
+	minHeight: number,
+	imageWidth: number,
+	imageHeight: number,
+): { x: number; y: number; width: number; height: number } {
+	const width = Math.min(imageWidth, Math.max(bbox.width, minWidth));
+	const height = Math.min(imageHeight, Math.max(bbox.height, minHeight));
+	const centerX = bbox.x + bbox.width / 2;
+	const centerY = bbox.y + bbox.height / 2;
+	const x = clampNumber(centerX - width / 2, 0, imageWidth - width);
+	const y = clampNumber(centerY - height / 2, 0, imageHeight - height);
+
+	return { x, y, width, height };
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+	return Math.max(min, Math.min(max, value));
 }

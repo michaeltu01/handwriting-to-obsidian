@@ -53,10 +53,9 @@ export function buildDiagramBlock(options: {
 
 /**
  * Replaces every `<DIAGRAM_n>` in the markdown with the corresponding rendered
- * block. Placeholders that have no matching block in `blocksById` are removed
- * (replaced with empty string); this happens when the transcription LLM
- * over-counts diagrams that the detection step did not separately identify.
- * Logs the gap to console so the mismatch is visible during development.
+ * block. Placeholders that have no matching block in `blocksById` are kept in
+ * place instead of being removed; this makes model mismatches visible in the
+ * imported note and avoids silently deleting a drawing reference.
  */
 export function substitutePlaceholders(
 	markdown: string,
@@ -68,17 +67,46 @@ export function substitutePlaceholders(
 		const block = blocksById.get(id);
 		if (block) return block;
 		unmatched.push(id);
-		return "";
+		return match;
 	});
 
 	if (unmatched.length > 0) {
 		console.warn(
-			"diagramPlaceholder: dropped placeholders not matched by detection:",
+			"diagramPlaceholder: kept placeholders not matched by detection:",
 			unmatched,
 			"(transcription saw diagrams the detection step did not return a bbox for)",
 		);
 	}
 	return result;
+}
+
+/**
+ * Appends detected diagram blocks that were saved but never referenced by a
+ * `<DIAGRAM_n>` placeholder. This covers the common mismatch where bbox
+ * detection finds more diagrams than the transcription model marked.
+ */
+export function appendUnreferencedDiagramBlocks(
+	markdown: string,
+	blocksById: Map<number, string>,
+	placeholderSourceMarkdown = markdown,
+): string {
+	const referencedIds = new Set(listPlaceholderIds(placeholderSourceMarkdown));
+	const extraBlocks = [...blocksById.entries()]
+		.filter(([id]) => !referencedIds.has(id))
+		.sort(([a], [b]) => a - b)
+		.map(([, block]) => block);
+
+	if (extraBlocks.length === 0) {
+		return markdown;
+	}
+
+	return [
+		markdown.trimEnd(),
+		"",
+		"## Detected Diagrams",
+		"",
+		...extraBlocks.flatMap((block) => [block, ""]),
+	].join("\n").trimEnd();
 }
 
 /**

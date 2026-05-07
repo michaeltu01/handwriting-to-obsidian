@@ -17,6 +17,7 @@ export class HandwrittenImportModal extends Modal {
 	private convertButtonIconEl!: HTMLSpanElement;
 	private updateApiKeyButtonEl!: HTMLButtonElement;
 	private imageButtonEl!: HTMLButtonElement;
+	private imageActionRowEl!: HTMLElement;
 	private cameraButtonEl: HTMLButtonElement | null = null;
 	private imageInputEl!: HTMLInputElement;
 	private isProcessing = false;
@@ -43,26 +44,29 @@ export class HandwrittenImportModal extends Modal {
 		const sourceSectionEl = contentEl.createDiv({ cls: "hto-section" });
 
 		if (Platform.isMobileApp) {
-			this.cameraButtonEl = createActionRow(sourceSectionEl, {
+			const cameraAction = createActionRow(sourceSectionEl, {
 				buttonText: "Open",
 				description: "Take one or more photos. Import starts after the last saved image.",
 				icon: "camera",
 				title: "Take photo",
 			});
+			this.cameraButtonEl = cameraAction.buttonEl;
 			this.cameraButtonEl.addEventListener("click", () => void this.handleCameraCapture());
 		}
 
 		this.imageInputEl = contentEl.createEl("input", { type: "file" });
 		this.imageInputEl.accept = "image/*,.pdf,application/pdf";
 		this.imageInputEl.multiple = true;
-		this.imageInputEl.style.display = "none";
+		this.imageInputEl.addClass("hto-file-input");
 
-		this.imageButtonEl = createActionRow(sourceSectionEl, {
+		const imageAction = createActionRow(sourceSectionEl, {
 			buttonText: "Choose",
 			description: "Photo, scan, screenshot, gallery images, or a PDF.",
 			icon: "files",
 			title: "Choose files",
 		});
+		this.imageActionRowEl = imageAction.rowEl;
+		this.imageButtonEl = imageAction.buttonEl;
 
 		this.selectedSectionEl = contentEl.createDiv({ cls: "hto-section hto-selected-section is-hidden" });
 		this.selectedFileCardEl = this.selectedSectionEl.createDiv({
@@ -109,7 +113,13 @@ export class HandwrittenImportModal extends Modal {
 		});
 		setIcon(this.convertButtonIconEl, "wand");
 
-		this.imageButtonEl.addEventListener("click", () => this.imageInputEl.click());
+		const openFilePicker = () => this.openFilePicker();
+		this.imageButtonEl.addEventListener("click", (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			openFilePicker();
+		});
+		this.imageActionRowEl.addEventListener("click", openFilePicker);
 		this.imageInputEl.addEventListener("change", () => this.handleFileSelection(this.imageInputEl.files));
 		this.updateApiKeyButtonEl.addEventListener("click", () => {
 			this.close();
@@ -127,6 +137,7 @@ export class HandwrittenImportModal extends Modal {
 
 	private handleFileSelection(files: FileList | null): void {
 		this.selectedFiles = files ? Array.from(files) : [];
+		this.imageInputEl.value = "";
 		const selectionError = getUploadSelectionError(this.selectedFiles);
 		if (this.selectedFiles.length === 0) {
 			this.updateSelectedFileState();
@@ -176,6 +187,14 @@ export class HandwrittenImportModal extends Modal {
 			this.isProcessing = false;
 			this.updateActions();
 		}
+	}
+
+	private openFilePicker(): void {
+		if (this.isProcessing || this.imageInputEl.disabled) {
+			return;
+		}
+
+		this.imageInputEl.click();
 	}
 
 	private async handleCameraCapture(): Promise<void> {
@@ -269,7 +288,7 @@ function createActionRow(
 		icon: string;
 		title: string;
 	},
-): HTMLButtonElement {
+): { rowEl: HTMLElement; buttonEl: HTMLButtonElement } {
 	const rowEl = containerEl.createDiv({ cls: "setting-item hto-action-row" });
 	const infoEl = rowEl.createDiv({ cls: "setting-item-info" });
 	const nameEl = infoEl.createDiv({ cls: "setting-item-name hto-action-name" });
@@ -278,10 +297,11 @@ function createActionRow(
 	nameEl.createSpan({ text: options.title });
 	infoEl.createDiv({ cls: "setting-item-description", text: options.description });
 	const controlEl = rowEl.createDiv({ cls: "setting-item-control" });
-	return controlEl.createEl("button", {
+	const buttonEl = controlEl.createEl("button", {
 		attr: { type: "button" },
 		text: options.buttonText,
 	});
+	return { rowEl, buttonEl };
 }
 
 function formatFileSize(bytes: number): string {

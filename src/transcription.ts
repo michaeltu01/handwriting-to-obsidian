@@ -60,7 +60,7 @@ export async function extractMarkdownFromImages(
 		? await transcribeImagesWithAnthropic(files, config.apiKey)
 		: await transcribeImagesWithOpenAI(files, config.apiKey);
 
-	const markdown = stripMarkdownFence(rawMarkdown.trim());
+	const markdown = normalizeMarkdownForObsidian(stripMarkdownFence(rawMarkdown.trim()));
 	if (!markdown) {
 		throw new Error("The model returned an empty transcription.");
 	}
@@ -82,7 +82,7 @@ export async function extractMarkdownFromFile(
 		? await transcribeWithAnthropic(file, kind, base64, config.apiKey)
 		: await transcribeWithOpenAI(file, kind, base64, config.apiKey);
 
-	const markdown = stripMarkdownFence(rawMarkdown.trim());
+	const markdown = normalizeMarkdownForObsidian(stripMarkdownFence(rawMarkdown.trim()));
 	if (!markdown) {
 		throw new Error("The model returned an empty transcription.");
 	}
@@ -107,6 +107,73 @@ function stripMarkdownFence(text: string): string {
 	const trimmed = text.trim();
 	const fenceMatch = trimmed.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/i);
 	return fenceMatch ? fenceMatch[1].trim() : trimmed;
+}
+
+/**
+ * Normalizes model Markdown into syntax Obsidian reliably renders.
+ * In particular, Obsidian math is most consistent with `$...$` and `$$...$$`;
+ * some models emit LaTeX delimiters `\(...\)` / `\[...\]`, which can show up
+ * as literal text in the note.
+ */
+function normalizeMarkdownForObsidian(markdown: string): string {
+	return transformOutsideFencedCodeBlocks(markdown, normalizeMathDelimiters).trim();
+}
+
+function normalizeMathDelimiters(markdown: string): string {
+	return markdown
+		.replace(/\\\[([\s\S]*?)\\\]/g, (_match, body: string) => `$$\n${body.trim()}\n$$`)
+		.replace(/\\\(([\s\S]*?)\\\)/g, (_match, body: string) => `$${body.trim()}$`);
+}
+
+function transformOutsideFencedCodeBlocks(
+	markdown: string,
+	transform: (text: string) => string,
+): string {
+	const chunks: string[] = [];
+	const outsideLines: string[] = [];
+	const fenceLines: string[] = [];
+	let inFence = false;
+
+	function flushOutside(): void {
+		if (outsideLines.length === 0) return;
+		chunks.push(transform(outsideLines.join("\n")));
+		outsideLines.length = 0;
+	}
+
+	function flushFence(): void {
+		if (fenceLines.length === 0) return;
+		chunks.push(fenceLines.join("\n"));
+		fenceLines.length = 0;
+	}
+
+	for (const line of markdown.split("\n")) {
+		if (/^```/.test(line.trim())) {
+			if (inFence) {
+				fenceLines.push(line);
+				flushFence();
+				inFence = false;
+			} else {
+				flushOutside();
+				fenceLines.push(line);
+				inFence = true;
+			}
+			continue;
+		}
+
+		if (inFence) {
+			fenceLines.push(line);
+		} else {
+			outsideLines.push(line);
+		}
+	}
+
+	if (inFence) {
+		flushFence();
+	} else {
+		flushOutside();
+	}
+
+	return chunks.join("\n");
 }
 
 export function inferNoteTitle(markdown: string, fallback: string): string {
@@ -207,6 +274,13 @@ function escapeYamlString(value: string): string {
 	return value.replace(/'/g, "''");
 }
 
+function sanitizeInputFileName(fileName: string): string {
+	const cleaned = fileName
+		.replace(/["\\\r\n]/g, "")
+		.trim();
+	return cleaned || "input.pdf";
+}
+
 function getMarkdownTranscriptionPrompt(imageCount: number): string {
 	const pageInstruction = imageCount > 1
 		? "These images are ordered pages from the same handwritten note. Merge them into one Markdown note in the same order."
@@ -220,11 +294,13 @@ function getMarkdownTranscriptionPrompt(imageCount: number): string {
 		"- Prefer structured Markdown over plain paragraphs.",
 		"- Keep the page order intact.",
 		"- If text is unclear, mark it as [illegible].",
+		"- Use Obsidian-compatible math syntax: inline math as `$...$` and display math as `$$...$$`. Do NOT use LaTeX delimiters `\\(...\\)` or `\\[...\\]`.",
 		"",
 		"Diagram handling (IMPORTANT):",
-		"- For each hand-drawn diagram, flowchart, sketch, or non-text drawing on the page, insert ONLY a placeholder of the form <DIAGRAM_n> on its own line. n is a 1-indexed counter starting at 1 for the first diagram, incrementing for each subsequent diagram in reading order (top-to-bottom, left-to-right).",
+		"- For each hand-drawn diagram, flowchart, protocol/interaction layout, chart, sketch, or non-text drawing on the page, insert ONLY a placeholder of the form <DIAGRAM_n> on its own line. n is a 1-indexed counter starting at 1 for the first diagram, incrementing for each subsequent diagram in reading order (top-to-bottom, left-to-right).",
+		"- Treat text-heavy visual structures as diagrams when spatial layout carries meaning: protocol participants with message arrows, timelines, columns connected by arrows, tables with ruling lines, mind maps, trees, boxes, braces, or sketches with labels.",
 		"- A diagram's text content (node labels, arrow labels, captions inside the drawing) belongs entirely to the placeholder. DO NOT also transcribe those labels as Markdown headings, bullets, paragraphs, or anywhere else outside the placeholder. The placeholder fully represents the diagram.",
-		"- Inline arrow shorthand like 'X -> Y' written between handwritten words in a sentence is text, not a diagram. Do not emit a placeholder for it.",
+		"- A single inline arrow shorthand like 'X -> Y' written between handwritten words in one sentence is text, not a diagram. Repeated arrows between separated participants/columns are a diagram.",
 		"",
 		"Formatting constraints:",
 		"- Do NOT use blockquote/callout syntax (lines starting with '>') unless the original handwriting is clearly a quote. Do not wrap headings or short text fragments in blockquotes.",
@@ -296,7 +372,8 @@ async function transcribeWithOpenAI(
 		? [
 			{
 				type: "input_file",
-				file_id: await uploadPdfToOpenAI(file, apiKey),
+				filename: sanitizeInputFileName(file.name),
+				file_data: base64,
 			},
 			{
 				type: "input_text",

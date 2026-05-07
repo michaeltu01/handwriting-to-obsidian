@@ -20,11 +20,22 @@
 }
 
 .hto-action-row {
+	cursor: pointer;
 	padding: 18px 0;
 }
 
 .hto-action-row:last-child {
 	border-bottom: 0;
+}
+
+.hto-file-input {
+	position: fixed;
+	left: 0;
+	top: 0;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+	pointer-events: none;
 }
 
 .hto-action-name {
