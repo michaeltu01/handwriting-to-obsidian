@@ -152,7 +152,6 @@ export function buildImportedNoteContent(options: ImportedNoteContentOptions): s
 	const markdown = options.markdown.trim();
 	const title = normalizeTitle(options.title, "Imported note");
 	const { frontmatter, body } = splitFrontmatter(markdown);
-	const titleHeading = body.startsWith("#") ? "" : `# ${title}\n\n`;
 	// Merge any model-emitted frontmatter into the plugin's frontmatter block.
 	const frontmatterLines = frontmatter ? frontmatter.split(/\r?\n/) : [];
 	const originalEmbeds = options.includeOriginalDocument && options.sourcePaths.length > 0
@@ -162,13 +161,9 @@ export function buildImportedNoteContent(options: ImportedNoteContentOptions): s
 	return [
 		"---",
 		...frontmatterLines,
-		`title: '${escapeYamlString(title)}'`,
-		`source_type: ${options.sourceType}`,
-		`imported_at: ${options.importedAt.toISOString()}`,
-		`llm_provider: ${options.provider}`,
 		"---",
 		"",
-		`${titleHeading}${body}`.trim(),
+		body.trim(),
 		...originalEmbeds,
 		"",
 	].join("\n");
