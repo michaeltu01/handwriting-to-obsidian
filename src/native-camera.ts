@@ -1,9 +1,11 @@
-import { App, Modal, Notice, Setting, TFile } from "obsidian";
+import { App, Modal, Notice, Setting, TFile, TFolder, normalizePath, setIcon } from "obsidian";
 import HandwritingToObsidianPlugin from "./plugin";
+import { TemplatePickerModal } from "./template-modal";
 
 export class NativeCameraModal extends Modal {
 	private plugin: HandwritingToObsidianPlugin;
 	private capturedFiles: File[] = [];
+	private selectedTemplateFile: TFile | null = null;
 
 	constructor(app: App, plugin: HandwritingToObsidianPlugin) {
 		super(app);
@@ -11,11 +13,13 @@ export class NativeCameraModal extends Modal {
 	}
 
 	onOpen() {
+		this.contentEl.addClass("hto-import-modal");
 		this.render();
 	}
 
 	onClose() {
 		const { contentEl } = this;
+		contentEl.removeClass("hto-import-modal");
 		contentEl.empty();
 	}
 
@@ -51,6 +55,45 @@ export class NativeCameraModal extends Modal {
 					})
 			);
 
+		const templateSectionEl = contentEl.createDiv({ cls: "hto-section" });
+		const templateButtonEl = createActionRow(templateSectionEl, {
+			buttonText: "Choose",
+			description: "Optional Markdown template to format the transcription.",
+			icon: "file-text",
+			title: "Choose template",
+		});
+		templateButtonEl.classList.toggle("is-selected", Boolean(this.selectedTemplateFile));
+		templateButtonEl.addEventListener("click", () => this.openTemplatePicker());
+
+		const templateSelectedSectionEl = templateSectionEl.createDiv({
+			cls: `hto-selected-section${this.selectedTemplateFile ? "" : " is-hidden"}`,
+		});
+		const templateSelectedCardEl = templateSelectedSectionEl.createDiv({
+			cls: "hto-selected-file-card",
+		});
+		const templateSelectedIconEl = templateSelectedCardEl.createDiv({
+			cls: "hto-selected-file-icon",
+		});
+		setIcon(templateSelectedIconEl, "file-text");
+		const templateSelectedBodyEl = templateSelectedCardEl.createDiv({
+			cls: "hto-selected-file-body",
+		});
+		const templateSelectedNameEl = templateSelectedBodyEl.createDiv({
+			cls: "hto-selected-file-name",
+			text: this.selectedTemplateFile?.basename ?? "",
+		});
+		const templateSelectedMetaEl = templateSelectedBodyEl.createDiv({
+			cls: "hto-selected-file-meta",
+			text: this.selectedTemplateFile?.path ?? "",
+		});
+		const templateClearButtonEl = templateSelectedSectionEl.createEl("button", {
+			attr: { type: "button" },
+			cls: "hto-secondary-button hto-template-clear-button",
+			text: "Clear template",
+		});
+		templateClearButtonEl.disabled = !this.selectedTemplateFile;
+		templateClearButtonEl.addEventListener("click", () => this.clearTemplateSelection());
+
 		const buttonContainer = contentEl.createDiv("modal-button-container");
 		buttonContainer.style.display = "flex";
 		buttonContainer.style.justifyContent = "flex-end";
@@ -73,9 +116,64 @@ export class NativeCameraModal extends Modal {
 			
 			new Notice(`Transcribing ${filesToUpload.length} native image(s)...`);
 			await saveImagesToAttachments(this.app, filesToUpload);
-			await this.plugin.importHandwrittenFiles(filesToUpload);
+			await this.plugin.importHandwrittenFiles(filesToUpload, this.selectedTemplateFile ?? undefined);
 		};
 	}
+
+	private openTemplatePicker(): void {
+		const folderSetting = this.plugin.settings.templateFolder.trim();
+		if (!folderSetting) {
+			new Notice("Set a template folder in the plugin settings first.");
+			return;
+		}
+
+		const normalizedFolder = normalizePath(folderSetting);
+		const folder = this.app.vault.getAbstractFileByPath(normalizedFolder);
+		if (!folder || !(folder instanceof TFolder)) {
+			new Notice("Template folder not found. Check the path in plugin settings.");
+			return;
+		}
+
+		new TemplatePickerModal(
+			this.app,
+			normalizedFolder,
+			(template) => {
+				this.selectedTemplateFile = template;
+				this.render();
+			},
+			() => {
+				this.render();
+			},
+		).open();
+	}
+
+	private clearTemplateSelection(): void {
+		this.selectedTemplateFile = null;
+		this.render();
+	}
+}
+
+function createActionRow(
+	containerEl: HTMLElement,
+	options: {
+		buttonText: string;
+		description: string;
+		icon: string;
+		title: string;
+	},
+): HTMLButtonElement {
+	const rowEl = containerEl.createDiv({ cls: "setting-item hto-action-row" });
+	const infoEl = rowEl.createDiv({ cls: "setting-item-info" });
+	const nameEl = infoEl.createDiv({ cls: "setting-item-name hto-action-name" });
+	const iconEl = nameEl.createSpan({ cls: "hto-action-icon" });
+	setIcon(iconEl, options.icon);
+	nameEl.createSpan({ text: options.title });
+	infoEl.createDiv({ cls: "setting-item-description", text: options.description });
+	const controlEl = rowEl.createDiv({ cls: "setting-item-control" });
+	return controlEl.createEl("button", {
+		attr: { type: "button" },
+		text: options.buttonText,
+	});
 }
 
 export async function captureNativeCameraImages(app: App): Promise<File[]> {
