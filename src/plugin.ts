@@ -150,11 +150,13 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 				apiKey: this.apiKey,
 				provider,
 				template: templateContext,
+				customInstructions: this.settings.customInstructions,
 			})
 			: await extractMarkdownFromImages(files, {
 				apiKey: this.apiKey,
 				provider,
 				template: templateContext,
+				customInstructions: this.settings.customInstructions,
 			});
 
 		const title = inferNoteTitle(markdown, stripExtension(files[0].name));

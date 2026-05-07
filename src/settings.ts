@@ -27,6 +27,7 @@ export interface HandwritingPluginSettings {
 	openAfterImport: boolean;
 	outputFolder: string;
 	templateFolder: string;
+	customInstructions: string;
 	diagramRegenerationMethod: DiagramRegenerationMethod;
 	autoLink: boolean;
 	autoLinkScope: string;
@@ -40,6 +41,7 @@ export const DEFAULT_SETTINGS: HandwritingPluginSettings = {
 	openAfterImport: true,
 	outputFolder: "Handwritten Notes",
 	templateFolder: "",
+	customInstructions: "",
 	diagramRegenerationMethod: "mermaid",
 	autoLink: true,
 	autoLinkScope: "",
@@ -55,6 +57,10 @@ export function normalizeApiKeyInput(apiKey: string): string {
 		.replace(/^['"`]|['"`]$/g, "")
 		.replace(/\u200B/g, "")
 		.trim();
+}
+
+export function normalizeCustomInstructions(value: string): string {
+	return value.replace(/\r\n?/g, "\n").trim();
 }
 
 /**
@@ -148,6 +154,24 @@ export class HandwritingSettingTab extends PluginSettingTab {
 						this.plugin.settings.templateFolder = value.trim();
 						await this.plugin.saveSettings();
 					});
+			});
+
+		new Setting(containerEl)
+			.setName("Custom transcription instructions")
+			.setDesc("Optional instructions appended to the transcription prompt.")
+			.addTextArea((text) => {
+				text
+					.setPlaceholder("e.g. Keep my bullet indentation; use ## for subheadings")
+					.setValue(this.plugin.settings.customInstructions)
+					.onChange(async (value) => {
+						this.plugin.settings.customInstructions = normalizeCustomInstructions(value);
+						await this.plugin.saveSettings();
+					});
+
+				text.inputEl.rows = 6;
+				text.inputEl.style.minWidth = "15rem";
+				text.inputEl.style.width = "-webkit-fill-available";
+				text.inputEl.style.resize = "none";
 			});
 
 		new Setting(containerEl)

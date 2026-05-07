@@ -6,6 +6,7 @@
  */
 
 import { arrayBufferToBase64, requestUrl } from "obsidian";
+import { normalizeCustomInstructions } from "./settings";
 import type { HandwritingProvider } from "./settings";
 
 export type SupportedUploadKind = "image" | "pdf";
@@ -19,6 +20,7 @@ interface ExtractionConfig {
 	apiKey: string;
 	provider: HandwritingProvider;
 	template?: TemplateContext;
+	customInstructions?: string;
 }
 
 interface ImportedNoteContentOptions {
@@ -64,8 +66,8 @@ export async function extractMarkdownFromImages(
 	}
 
 	const rawMarkdown = config.provider === "anthropic"
-		? await transcribeImagesWithAnthropic(files, config.apiKey, config.template)
-		: await transcribeImagesWithOpenAI(files, config.apiKey, config.template);
+		? await transcribeImagesWithAnthropic(files, config.apiKey, config.template, config.customInstructions)
+		: await transcribeImagesWithOpenAI(files, config.apiKey, config.template, config.customInstructions);
 
 	const markdown = stripMarkdownFence(rawMarkdown.trim());
 	if (!markdown) {
@@ -86,8 +88,8 @@ export async function extractMarkdownFromFile(
 
 	const base64 = arrayBufferToBase64(await file.arrayBuffer());
 	const rawMarkdown = config.provider === "anthropic"
-		? await transcribeWithAnthropic(file, kind, base64, config.apiKey, config.template)
-		: await transcribeWithOpenAI(file, kind, base64, config.apiKey, config.template);
+		? await transcribeWithAnthropic(file, kind, base64, config.apiKey, config.template, config.customInstructions)
+		: await transcribeWithOpenAI(file, kind, base64, config.apiKey, config.template, config.customInstructions);
 
 	const markdown = stripMarkdownFence(rawMarkdown.trim());
 	if (!markdown) {
@@ -225,13 +227,16 @@ function escapeYamlString(value: string): string {
 	return value.replace(/'/g, "''");
 }
 
-function getMarkdownTranscriptionPrompt(imageCount: number, template?: TemplateContext): string {
+function getMarkdownTranscriptionPrompt(
+	imageCount: number,
+	template?: TemplateContext,
+	customInstructions?: string,
+): string {
 	const pageInstruction = imageCount > 1
 		? "These images are ordered pages from the same handwritten note. Merge them into one Markdown note in the same order."
 		: "Convert this handwritten note into clean Markdown.";
 
 	const basePrompt = [
-		pageInstruction,
 		"",
 		"Requirements:",
 		"- Preserve headings, bullets, numbered lists, indentation, separators, and emphasis when they are visually clear.",
@@ -252,12 +257,17 @@ function getMarkdownTranscriptionPrompt(imageCount: number, template?: TemplateC
 		"- Return only the Markdown transcription with no extra commentary.",
 	].join("\n");
 
+	const normalizedCustomInstructions = normalizeCustomInstructions(customInstructions ?? "");
+	const customInstructionsBlock = normalizedCustomInstructions
+		? ["", "Custom instructions:", normalizedCustomInstructions].join("\n")
+		: "";
+	const fullPrompt = pageInstruction + basePrompt + customInstructionsBlock;
+
 	if (!template || !template.content.trim()) {
-		return basePrompt;
+		return fullPrompt;
 	}
 
-	return [
-		basePrompt,
+	const templatePrompt = [
 		"",
 		"Template formatting (IMPORTANT):",
 		"- Use the template below as the target structure. Adapt headings, sections, and ordering to match it.",
@@ -270,12 +280,15 @@ function getMarkdownTranscriptionPrompt(imageCount: number, template?: TemplateC
 		template.content.trim(),
 		"<<<END TEMPLATE>>>",
 	].join("\n");
+
+	return fullPrompt + templatePrompt;
 }
 
 async function transcribeImagesWithOpenAI(
 	files: File[],
 	apiKey: string,
 	template?: TemplateContext,
+	customInstructions?: string,
 ): Promise<string> {
 	if (!apiKey.trim()) {
 		throw new Error("Missing OpenAI API key.");
@@ -284,7 +297,7 @@ async function transcribeImagesWithOpenAI(
 	const content = [
 		{
 			type: "input_text",
-			text: getMarkdownTranscriptionPrompt(files.length, template),
+			text: getMarkdownTranscriptionPrompt(files.length, template, customInstructions),
 		},
 		...await Promise.all(files.map(async (file) => ({
 			type: "input_image" as const,
@@ -331,6 +344,7 @@ async function transcribeWithOpenAI(
 	base64: string,
 	apiKey: string,
 	template?: TemplateContext,
+	customInstructions?: string,
 ): Promise<string> {
 	if (!apiKey.trim()) {
 		throw new Error("Missing OpenAI API key.");
@@ -344,13 +358,13 @@ async function transcribeWithOpenAI(
 			},
 			{
 				type: "input_text",
-				text: getMarkdownTranscriptionPrompt(1, template),
+				text: getMarkdownTranscriptionPrompt(1, template, customInstructions),
 			},
 		]
 		: [
 			{
 				type: "input_text",
-				text: getMarkdownTranscriptionPrompt(1, template),
+				text: getMarkdownTranscriptionPrompt(1, template, customInstructions),
 			},
 			{
 				type: "input_image",
@@ -437,6 +451,7 @@ async function transcribeImagesWithAnthropic(
 	files: File[],
 	apiKey: string,
 	template?: TemplateContext,
+	customInstructions?: string,
 ): Promise<string> {
 	if (!apiKey.trim()) {
 		throw new Error("Missing Anthropic API key.");
@@ -445,7 +460,7 @@ async function transcribeImagesWithAnthropic(
 	const content = [
 		{
 			type: "text",
-			text: getMarkdownTranscriptionPrompt(files.length, template),
+			text: getMarkdownTranscriptionPrompt(files.length, template, customInstructions),
 		},
 		...await Promise.all(files.map(async (file) => ({
 			type: "image" as const,
@@ -496,6 +511,7 @@ async function transcribeWithAnthropic(
 	base64: string,
 	apiKey: string,
 	template?: TemplateContext,
+	customInstructions?: string,
 ): Promise<string> {
 	if (!apiKey.trim()) {
 		throw new Error("Missing Anthropic API key.");
@@ -513,7 +529,7 @@ async function transcribeWithAnthropic(
 			},
 			{
 				type: "text",
-				text: getMarkdownTranscriptionPrompt(1, template),
+				text: getMarkdownTranscriptionPrompt(1, template, customInstructions),
 			},
 		]
 		: [
@@ -527,7 +543,7 @@ async function transcribeWithAnthropic(
 			},
 			{
 				type: "text",
-				text: getMarkdownTranscriptionPrompt(1, template),
+				text: getMarkdownTranscriptionPrompt(1, template, customInstructions),
 			},
 		];
 
