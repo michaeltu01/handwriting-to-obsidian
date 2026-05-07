@@ -1,6 +1,6 @@
-import { App, Modal, Notice, Setting, TFile, TFolder, normalizePath, setIcon } from "obsidian";
+import { App, Modal, Notice, Setting, TFile, setIcon } from "obsidian";
 import HandwritingToObsidianPlugin from "./plugin";
-import { TemplatePickerModal } from "./template-modal";
+import { openConfiguredTemplatePicker } from "./template-picker";
 
 export class NativeCameraModal extends Modal {
 	private plugin: HandwritingToObsidianPlugin;
@@ -121,22 +121,9 @@ export class NativeCameraModal extends Modal {
 	}
 
 	private openTemplatePicker(): void {
-		const folderSetting = this.plugin.settings.templateFolder.trim();
-		if (!folderSetting) {
-			new Notice("Set a template folder in the plugin settings first.");
-			return;
-		}
-
-		const normalizedFolder = normalizePath(folderSetting);
-		const folder = this.app.vault.getAbstractFileByPath(normalizedFolder);
-		if (!folder || !(folder instanceof TFolder)) {
-			new Notice("Template folder not found. Check the path in plugin settings.");
-			return;
-		}
-
-		new TemplatePickerModal(
+		openConfiguredTemplatePicker(
 			this.app,
-			normalizedFolder,
+			this.plugin,
 			(template) => {
 				this.selectedTemplateFile = template;
 				this.render();
@@ -144,7 +131,7 @@ export class NativeCameraModal extends Modal {
 			() => {
 				this.render();
 			},
-		).open();
+		);
 	}
 
 	private clearTemplateSelection(): void {
