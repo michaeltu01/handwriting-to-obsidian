@@ -120,7 +120,7 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 	 * @param files list of files to import
 	 * @returns a Promise containing the Obsidian file
 	 */
-	async importHandwrittenFiles(files: File[]): Promise<TFile> {
+	async importHandwrittenFiles(files: File[], templateFile?: TFile): Promise<TFile> {
 		this.refreshApiKeyFromSettings();
 		if (!this.apiKey) {
 			throw new Error("Select an API key secret in the plugin settings before importing notes.");
@@ -135,14 +135,28 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			throw new Error(selectionError);
 		}
 
+		const templateContent = templateFile
+			? await this.app.vault.cachedRead(templateFile)
+			: "";
+		const templateContext = templateFile
+			? {
+				path: templateFile.path,
+				content: templateContent,
+			}
+			: undefined;
+
 		const { kind, markdown } = files.length === 1 && isPdfUpload(files[0])
 			? await extractMarkdownFromFile(files[0], {
 				apiKey: this.apiKey,
 				provider,
+				template: templateContext,
+				customInstructions: this.settings.customInstructions,
 			})
 			: await extractMarkdownFromImages(files, {
 				apiKey: this.apiKey,
 				provider,
+				template: templateContext,
+				customInstructions: this.settings.customInstructions,
 			});
 
 		const title = inferNoteTitle(markdown, stripExtension(files[0].name));
@@ -204,6 +218,7 @@ export default class HandwritingToObsidianPlugin extends Plugin {
 			sourcePaths,
 			sourceType: kind,
 			title,
+			templatePath: templateFile?.path,
 		});
 
 		const createdFile = await this.app.vault.create(notePath, noteContent);

@@ -89,6 +89,10 @@
 	line-height: 1.35;
 }
 
+.hto-template-clear-button {
+	margin-top: 8px;
+}
+
 .hto-status {
 	display: flex;
 	gap: 8px;
