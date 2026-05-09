@@ -15,6 +15,30 @@ Works on both desktop and mobile Obsidian (1.11.4+).
 - **Mobile camera** — a mobile-only command opens the native camera so you can photograph multiple pages and import them in one batch.
 - **Secure API key storage** — the API key is stored in Obsidian's Secret Storage, never persisted in `data.json`.
 
+## Project structure
+
+```
+src/
+├── main.ts                    # Re-exports the plugin class (esbuild entry point)
+├── plugin.ts                  # Orchestrator — commands, ribbon icon, import pipeline, diagram regen
+├── settings.ts                # Settings interface, defaults, provider detection, settings tab UI
+├── transcription.ts           # LLM transcription I/O, prompt building, note-content builder
+├── upload.ts                  # File-type predicates and upload selection validation
+├── import-modal.ts            # Main import modal UI (file chooser, template picker, convert button)
+├── native-camera.ts           # Mobile-only camera modal using native file input with capture
+├── template-picker.ts         # Validates template folder and opens the fuzzy picker
+├── template-modal.ts          # Fuzzy-search modal listing Markdown files in the template folder
+├── auto-linking.ts            # LLM-based semantic link discovery and wikilink application
+├── link-confirmation-modal.ts # Checkbox modal for accepting/rejecting proposed auto-links
+├── imageProcessing.ts         # Canvas-based image resize, crop, and bbox denormalization
+├── diagramDetection.ts        # LLM vision call to detect diagram bounding boxes via tool use
+├── diagramPlaceholder.ts      # <DIAGRAM_n> placeholder substitution, block parsing, rewrite helpers
+├── diagramRegeneration.ts     # Strategy router dispatching to mermaid or gpt-image regeneration
+├── mermaidGeneration.ts       # Converts a cropped diagram image to Mermaid syntax via LLM tool use
+├── gptImageGeneration.ts      # Vision description → gpt-image-1 PNG generation pipeline
+└── diagramDebugModal.ts       # Dev tool — visualize detected bounding boxes on an image
+```
+
 ## Setup
 
 1. Create or open an Obsidian vault.
