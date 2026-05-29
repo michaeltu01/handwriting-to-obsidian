@@ -255,6 +255,7 @@ function getMarkdownTranscriptionPrompt(
 		"Formatting constraints:",
 		"- Do NOT use blockquote/callout syntax (lines starting with '>') unless the original handwriting is clearly a quote. Do not wrap headings or short text fragments in blockquotes.",
 		"- Do NOT wrap your entire response in a ```markdown fence. Return raw Markdown directly.",
+		"- Use tab characters instead of spaces for sub-bullets.",
 		"- Return only the Markdown transcription with no extra commentary.",
 	].join("\n");
 
