@@ -48,7 +48,7 @@ const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
 };
 
 const OPENAI_MODEL = "gpt-4o-mini";
-const ANTHROPIC_MODEL = "claude-sonnet-4-20250514";
+const ANTHROPIC_MODEL = "claude-sonnet-4-6";
 const MAX_OUTPUT_TOKENS = 4096;
 
 export async function extractMarkdownFromImages(

@@ -7,7 +7,7 @@ Works on both desktop and mobile Obsidian (1.11.4+).
 ## Features
 
 - **Image & PDF import** — choose one PDF or one or more images. Multi-page images are merged into a single note.
-- **LLM transcription** — sends inputs to OpenAI (`gpt-4o-mini`) or Anthropic (`claude-sonnet-4`) via Obsidian's `requestUrl` (no CORS issues, works on mobile).
+- **LLM transcription** — sends inputs to OpenAI (`gpt-4o-mini`) or Anthropic (`claude-sonnet-4-6`) via Obsidian's `requestUrl` (no CORS issues, works on mobile).
 - **Diagram detection & regeneration** — hand-drawn diagrams are detected, cropped, and embedded in the note as image attachments with `<DIAGRAM_n>` placeholders. Run "Regenerate diagrams in this note" to convert them to Mermaid code blocks or GPT-generated PNGs.
 - **Auto-linking** — after transcription, the LLM compares the new note against existing vault notes and proposes `[[wikilinks]]`. A confirmation modal lets you accept or reject each link before the note is created.
 - **Templates** — optionally pick a Markdown template to guide the transcription structure (headings, frontmatter fields, sections).
