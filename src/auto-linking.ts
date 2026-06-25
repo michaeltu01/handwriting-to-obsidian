@@ -14,7 +14,7 @@ import { requestUrl } from "obsidian";
 import type { HandwritingProvider } from "./settings.js";
 
 const OPENAI_MODEL = "gpt-4o-mini";
-const ANTHROPIC_MODEL = "claude-sonnet-4-6";
+const ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
 const ANTHROPIC_VERSION = "2023-06-01";
 const MAX_OUTPUT_TOKENS = 4096;
 
